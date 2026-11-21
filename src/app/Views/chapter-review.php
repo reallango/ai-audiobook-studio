@@ -112,12 +112,42 @@ $audioUrl = static fn (string $kind, string $ref, array $extra = []): string => 
 <script src="<?= e(base_url('assets/js/chapter-audio.js')) ?>" defer></script>
 <?php endif; ?>
 
+<?php if (!$archived): $linkedSets = (new \App\Services\PronunciationService())->projectSets((string) $project['id']); ?>
+<section class="workbench" data-workbench
+         data-preview="<?= e(base_url('voice-preview')) ?>" data-rule="<?= e(base_url('pronunciation-rule')) ?>" data-token="<?= e($audioToken) ?>"
+         data-project="<?= e((string) $project['id']) ?>" data-voice="<?= e($chapter['voice']) ?>" data-speed="<?= e(number_format((float) ($project['tts_speed'] ?? 1.0), 2, '.', '')) ?>">
+  <h2>Try a pronunciation</h2>
+  <p class="muted">Pick "try this" on a paragraph below, or select a word in the original text. Type how it should sound, listen with this project's voice and rules, then save it as a rule. Nothing changes until you save.</p>
+  <label>Text to hear <textarea data-wb-text rows="3" maxlength="3000" placeholder="Choose a paragraph below, or type here"></textarea></label>
+  <div class="wb-row">
+    <label>Written <input data-wb-written maxlength="100" placeholder="Bajor"></label>
+    <label>Spoken <input data-wb-spoken maxlength="200" placeholder="Bay-jor"></label>
+    <button type="button" data-wb-hear>Hear it</button>
+  </div>
+  <audio controls hidden data-wb-audio></audio>
+  <p class="wb-status" data-wb-status aria-live="polite"></p>
+  <div class="wb-row">
+    <label>Save as a rule in
+      <select data-wb-layer>
+        <option value="project|<?= e((string) $project['id']) ?>">This project only</option>
+        <?php foreach ($linkedSets as $set): ?><option value="set|<?= e((string) $set['id']) ?>">Series set: <?= e($set['name']) ?></option><?php endforeach; ?>
+        <option value="voice|<?= e($chapter['voice']) ?>">Voice <?= e($chapter['voice']) ?>, every book</option>
+        <option value="default|">Default, every book and voice</option>
+      </select>
+    </label>
+    <label class="check"><input type="checkbox" data-wb-whole checked> whole word</label>
+    <button type="button" class="button secondary" data-wb-save>Save rule</button>
+  </div>
+</section>
+<script src="<?= e(base_url('assets/js/workbench.js')) ?>" defer></script>
+<?php endif; ?>
+
 <section class="review-list">
   <div class="review-cols"><span>Original from the EPUB</span><span>Narration</span></div>
   <?php foreach ($chapter['items'] as $item): ?>
     <article class="review-item <?= $item['excluded'] ? 'skipped' : '' ?> <?= $focus === $item['id'] ? 'focus' : '' ?>" id="b-<?= e($item['id']) ?>">
       <div class="review-source">
-        <span class="block-type"><?= e($item['type']) ?></span>
+        <span class="block-type"><?= e($item['type']) ?></span><?php if (!$archived): ?> <button type="button" class="link-button" data-try="<?= e($item['cleaned']) ?>">try this</button><?php endif; ?>
         <p><?= e($item['source']) ?></p>
       </div>
       <div class="review-narration">

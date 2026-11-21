@@ -61,6 +61,22 @@ check('spoken text is not rewritten again', $spoken(null, null, 'Rom'), 'Ra-mm')
 $svc->save('default', '', 'OceanofPDF.com', '');
 check('empty spoken form removes the text', trim($spoken(null, null, 'Hello OceanofPDF.com there')), 'Hello  there');
 
+// ALL-CAPS words are normalised unless a rule covers them
+$caps = static fn (string $t, bool $on = true): string => $svc->apply($t, $svc->effective(null, null), $on)['text'];
+check('ALL-CAPS word becomes a normal word', $caps('The STARBASE was quiet.'), 'The Starbase was quiet.');
+check('apostrophes and hyphens', $caps("It WASN'T the NCC-1701."), "It Wasn't the Ncc-1701.");
+check('single letters and I are left alone', $caps('I met A friend.'), 'I met A friend.');
+check('Roman numerals are left to rules', $caps('Rigel VII and XII'), 'Rigel VII and XII');
+check('a rule beats the ALL-CAPS step', (function () use ($svc, $caps): string { $svc->save('default', '', 'USS', 'U.S.S.'); return $caps('The USS Defiant and the STARBASE'); })(), 'The U.S.S. Defiant and the Starbase');
+check('normalising can be switched off', $caps('The STARBASE', false), 'The STARBASE');
+check('mixed case is untouched', $caps('McCoy and DeForest'), 'McCoy and DeForest');
+$audit = PronunciationService::capsAudit(['STARBASE and USS and STARBASE, NASA.', 'I met VII'], $svc->effective(null, null));
+check('audit lists uncovered ALL-CAPS words by frequency, not covered or single ones', [array_column($audit, 'token'), $audit[0]['count'], $audit[0]['becomes']], [['STARBASE', 'NASA', 'VII'], 2, 'Starbase']);
+check('audit marks Roman numerals as left alone', end($audit)['becomes'], null);
+$tmp = $svc->withTemporary($svc->effective(null, null), [['pattern' => 'Qonos', 'replacement' => "Kah-nos"]]);
+check('temporary rules apply but are not saved', [$svc->apply('Qonos', $tmp)['text'], $svc->apply('Qonos', $svc->effective(null, null))['text']], ['Kah-nos', 'Qonos']);
+check('temporary rules win over saved ones', $svc->apply('Sisko', $svc->withTemporary($svc->effective(null, null), [['pattern' => 'Sisko', 'replacement' => 'Sis-koh']]))['text'], 'Sis-koh');
+
 // import
 check('import count', $svc->importMap('project', 'p2', ['Quark' => 'Kwork', 'Odo' => 'Oh-doh']), 2);
 check('json map decoding rejects lists', (function (): string { try { PronunciationService::decodeJsonMap('["a"]'); return 'accepted'; } catch (InvalidArgumentException $e) { return 'rejected'; } })(), 'rejected');

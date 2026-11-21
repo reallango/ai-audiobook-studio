@@ -55,6 +55,7 @@ try {
     if (!in_array($bitrate, [64, 96, 128], true)) {
         throw new InvalidArgumentException('Select a supported audio quality.');
     }
+    $normalizeCaps = array_key_exists('normalize_caps', $payload) ? (empty($payload['normalize_caps']) ? 0 : 1) : (int) ($project['normalize_caps'] ?? 1);
     $speed = (float) ($payload['speed'] ?? 1.0);
     if (!\App\Services\KokoroClient::validSpeed($speed)) {
         throw new InvalidArgumentException('Speed must be between 0.5 and 2.0.');
@@ -69,6 +70,7 @@ try {
              active_voice_profile_id=:voice,
              audio_bitrate_kbps=:bitrate,
              tts_speed=:speed,
+             normalize_caps=:caps,
              updated_at=CURRENT_TIMESTAMP
          WHERE id=:id'
     );
@@ -77,6 +79,7 @@ try {
         'voice' => $voice !== '' ? $voice : null,
         'bitrate' => $bitrate,
         'speed' => $speed,
+        'caps' => $normalizeCaps,
         'id' => $projectId,
     ]);
 

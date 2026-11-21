@@ -102,9 +102,9 @@ $explain = [
   <?php if ($ready && ($layer !== 'set' || $currentSet)): ?>
     <h2 class="pron-h2"><?= e($layers[$layer]) ?> rules<?= $layer === 'voice' ? ' for ' . e($ref) : '' ?><?= $currentSet ? ': ' . e($currentSet['name']) : '' ?> <small>(<?= count($rules) ?>)</small></h2>
 
-    <form method="post" class="pron-add"><?= $hidden() ?><input type="hidden" name="action" value="add_rule">
-      <label>Written <input name="pattern" maxlength="100" required placeholder="Bajor"></label>
-      <label>Spoken <small>(empty = say nothing)</small> <input name="replacement" maxlength="200" placeholder="Bay-jor"></label>
+    <form method="post" class="pron-add" id="add"><?= $hidden() ?><input type="hidden" name="action" value="add_rule">
+      <label>Written <input name="pattern" maxlength="100" required placeholder="Bajor" value="<?= e($prefillWritten) ?>"></label>
+      <label>Spoken <small>(empty = say nothing)</small> <input name="replacement" maxlength="200" placeholder="Bay-jor" value="<?= e($prefillSpoken) ?>"></label>
       <label>Note <input name="note" maxlength="300" placeholder="optional"></label>
       <label class="check"><input type="checkbox" name="whole_word" checked> whole word</label>
       <label class="check"><input type="checkbox" name="case_sensitive"> match case</label>
@@ -157,6 +157,29 @@ $explain = [
     <p class="pron-empty">Create a series set above, or import the bundled list.</p>
   <?php endif; ?>
 </section>
+
+<?php if ($layer === 'project' && $ref !== ''): ?>
+<section class="form-panel pron-panel" id="caps">
+  <h2 class="pron-h2">ALL-CAPS words in this book <small>(<?= count($capsAudit) ?><?= count($capsAudit) === 80 ? '+' : '' ?>)</small></h2>
+  <p class="pron-explain">Kokoro spells ALL-CAPS words letter by letter.
+    <?= $capsOn ? 'Here they are turned into normal words (STARBASE becomes Starbase) unless a rule covers them. Initialisms that should be spelled, like USS or FBI, need a rule such as USS to U.S.S.' : 'Turning them into normal words is switched off for this project, so every word below is spelled out unless a rule covers it.' ?></p>
+  <?php if ($capsAudit): ?>
+    <table class="pron-table">
+      <thead><tr><th>Word</th><th>Times</th><th>Becomes</th><th></th></tr></thead>
+      <tbody>
+      <?php foreach ($capsAudit as $row): ?>
+        <tr>
+          <td><code><?= e($row['token']) ?></code></td>
+          <td><?= (int) $row['count'] ?></td>
+          <td><?= $row['becomes'] === null ? '<em>left as written (a rule decides)</em>' : ($capsOn ? '<code>' . e($row['becomes']) . '</code>' : '<em>spelled out</em>') ?></td>
+          <td><a href="<?= e(base_url('pronunciation', ['layer' => 'project', 'ref' => $ref, 'p' => $row['token'], 's' => $row['becomes'] ?? $row['token']])) ?>#add">make a rule</a></td>
+        </tr>
+      <?php endforeach; ?>
+      </tbody>
+    </table>
+  <?php else: ?><p class="pron-empty">No uncovered ALL-CAPS words.</p><?php endif; ?>
+</section>
+<?php endif; ?>
 
 <section class="form-panel pron-panel" id="test">
   <h2 class="pron-h2">Try it</h2>

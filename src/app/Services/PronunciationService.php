@@ -189,10 +189,10 @@ final class PronunciationService
      * @param array<string,array<string,mixed>> $effective
      * @return array{text:string,hits:array<string,int>}
      */
-    public function apply(string $text, array $effective): array
+    public function apply(string $text, array $effective, bool $normalizeCaps = true): array
     {
         $text = str_replace(["\u{2019}", "\u{2018}"], "'", $text);
-        if ($effective === []) return ['text' => $text, 'hits' => []];
+        if ($effective === [] && !$normalizeCaps) return ['text' => $text, 'hits' => []];
         $rules = array_values($effective);
         usort($rules, static fn (array $a, array $b): int => mb_strlen((string) $b['pattern']) <=> mb_strlen((string) $a['pattern']));
 
@@ -205,14 +205,85 @@ final class PronunciationService
             $parts[] = $body;
             $byKey[mb_strtolower((string) $rule['pattern'])] = $rule;
         }
+        // Last alternative, so any rule wins over it: an ALL-CAPS word that no rule covers (Kokoro would spell it out).
+        if ($normalizeCaps) $parts[] = '(?<caps>' . self::CAPS_TOKEN . ')';
         $hits = [];
         $out = preg_replace_callback('/' . implode('|', $parts) . '/u', static function (array $m) use ($byKey, &$hits): string {
+            if (isset($m['caps']) && $m['caps'] !== '') {
+                $normal = self::normalCase($m['caps']);
+                if ($normal === null) return $m[0];
+                $hits['[caps] ' . $m['caps']] = ($hits['[caps] ' . $m['caps']] ?? 0) + 1;
+                return $normal;
+            }
             $rule = $byKey[mb_strtolower($m[0])] ?? null;
             if ($rule === null) return $m[0];
             $hits[$rule['pattern']] = ($hits[$rule['pattern']] ?? 0) + 1;
             return (string) $rule['replacement'];
         }, $text);
         return ['text' => $out ?? $text, 'hits' => $hits];
+    }
+
+    /** An ALL-CAPS word: capitals and digits, optionally joined by apostrophes or hyphens (STARBASE, WASN'T, NCC-1701). */
+    private const CAPS_TOKEN = '(?<![\p{L}\p{N}_\'])\p{Lu}[\p{Lu}\p{N}]*(?:[\'-][\p{Lu}\p{N}]+)*(?![\p{L}\p{N}_\'])';
+
+    /**
+     * STARBASE becomes Starbase, WASN'T becomes Wasn't. Null means leave it: a single letter, or a Roman numeral
+     * (II, IV, XII), which a rule should decide.
+     */
+    public static function normalCase(string $token): ?string
+    {
+        $letters = preg_replace('/[^\p{L}]/u', '', $token) ?? '';
+        if (mb_strlen($letters) < 2) return null;
+        if (preg_match('/^[IVXLCDM]+$/', $letters) && !preg_match('/[\'-]/', $token)) return null;
+        $lower = mb_strtolower($token);
+        return preg_replace_callback('/\p{L}/u', static fn (array $m): string => mb_strtoupper($m[0]), $lower, 1) ?? $lower;
+    }
+
+    /**
+     * Adds temporary rules on top of the effective ones, to try a change before saving it.
+     * @param array<string,array<string,mixed>> $effective
+     * @param array<int,array{pattern:string,replacement:string}> $temporary
+     * @return array<string,array<string,mixed>>
+     */
+    public function withTemporary(array $effective, array $temporary): array
+    {
+        foreach (array_slice($temporary, 0, 20) as $t) {
+            $pattern = trim(str_replace(["\u{2019}", "\u{2018}"], "'", (string) ($t['pattern'] ?? '')));
+            if ($pattern === '' || mb_strlen($pattern) > 100 || mb_strlen((string) ($t['replacement'] ?? '')) > 200) continue;
+            $effective[mb_strtolower($pattern)] = [
+                'pattern' => $pattern, 'replacement' => (string) ($t['replacement'] ?? ''), 'case_sensitive' => 0, 'whole_word' => 1,
+                'enabled' => 1, 'layer' => 'temp', 'layer_label' => 'Trying it now',
+            ];
+        }
+        return $effective;
+    }
+
+    /**
+     * Every ALL-CAPS word in the given texts that no rule covers, with how often it occurs and what it becomes.
+     * @param string[] $texts
+     * @param array<string,array<string,mixed>> $effective
+     * @return array<int,array{token:string,becomes:?string,count:int}>
+     */
+    public static function capsAudit(array $texts, array $effective): array
+    {
+        $counts = [];
+        foreach ($texts as $text) {
+            $text = str_replace(["\u{2019}", "\u{2018}"], "'", $text);
+            if (preg_match_all('/' . self::CAPS_TOKEN . '/u', $text, $m)) {
+                foreach ($m[0] as $token) {
+                    if (isset($effective[mb_strtolower($token)])) continue;
+                    if (mb_strlen((string) preg_replace('/[^\p{L}]/u', '', $token)) < 2) continue;   // "I", "A": nothing to decide
+                    $counts[$token] = ($counts[$token] ?? 0) + 1;
+                }
+            }
+        }
+        $rows = [];
+        foreach ($counts as $token => $n) {
+            $normal = self::normalCase((string) $token);
+            $rows[] = ['token' => (string) $token, 'becomes' => $normal, 'count' => $n];
+        }
+        usort($rows, static fn (array $a, array $b): int => [$b['count'], $a['token']] <=> [$a['count'], $b['token']]);
+        return $rows;
     }
 
     // ----- internals -----

@@ -19,7 +19,7 @@ final class App
     public static function run(): void
     {
         $route=trim((string)($_GET['page']??'projects'),'/');
-        try{match($route){'api-health'=>self::json(self::health()),'diagnostics'=>self::view('diagnostics'),'projects','home',''=>self::projects(),'project-create'=>self::createProject(),'project'=>self::project(),'epub-upload'=>self::epubUpload(),'epub-analyze'=>self::epubAnalyze(),'source-sections'=>self::sourceSections(),'source-section'=>self::sourceSection(),'project-archive'=>self::archiveProject(),'project-restore'=>self::restoreProject(),'project-delete'=>self::deleteProject(),'voice-lab'=>self::voiceLab(),'voice-preview'=>self::voicePreview(),'pronunciation'=>self::pronunciation(),'chapters'=>self::chapters(),'chapter-review'=>self::chapterReview(),'chapter-audio'=>self::chapterAudio(),'audio'=>self::audio(),default=>self::notFound()};}
+        try{match($route){'api-health'=>self::json(self::health()),'diagnostics'=>self::view('diagnostics'),'projects','home',''=>self::projects(),'project-create'=>self::createProject(),'project'=>self::project(),'epub-upload'=>self::epubUpload(),'epub-analyze'=>self::epubAnalyze(),'source-sections'=>self::sourceSections(),'source-section'=>self::sourceSection(),'project-archive'=>self::archiveProject(),'project-restore'=>self::restoreProject(),'project-delete'=>self::deleteProject(),'voice-lab'=>self::voiceLab(),'voice-preview'=>self::voicePreview(),'pronunciation'=>self::pronunciation(),'pronunciation-rule'=>self::pronunciationRule(),'chapters'=>self::chapters(),'chapter-review'=>self::chapterReview(),'chapter-audio'=>self::chapterAudio(),'audio'=>self::audio(),default=>self::notFound()};}
         catch(Throwable $error){error_log($error->__toString());http_response_code(500);self::view('error',['message'=>config('app.debug',false)?$error->getMessage():'The request could not be completed. Check the application log for details.']);}
     }
     private static function voiceLab():void
@@ -123,7 +123,15 @@ final class App
         $testResult = null;
         if ($testText !== '') {
             $effective = $svc->effective($testProject !== '' ? $testProject : null, $testVoice);
-            $testResult = $svc->apply(mb_substr($testText, 0, 2000), $effective) + ['effective' => $effective];
+            $testRow = $testProject !== '' ? (new ProjectRepository())->find($testProject) : null;
+            $testResult = $svc->apply(mb_substr($testText, 0, 2000), $effective, $testRow === null || (int) ($testRow['normalize_caps'] ?? 1) === 1) + ['effective' => $effective];
+        }
+        // ALL-CAPS words in the book that no rule covers (Kokoro would spell them out)
+        $capsAudit = [];
+        if ($layer === 'project' && $ref !== '') {
+            $auditProject = (new ProjectRepository())->find($ref);
+            $voiceForAudit = (string) ($auditProject['active_voice_profile_id'] ?? '') ?: VoiceCatalog::DEFAULT_VOICE;
+            $capsAudit = array_slice(PronunciationService::capsAudit((new NarrationService())->sourceTexts($ref), $svc->effective($ref, $voiceForAudit)), 0, 80);
         }
 
         self::view('pronunciation', [
@@ -132,10 +140,33 @@ final class App
             'projectSets' => $layer === 'project' && $ref !== '' ? $svc->projectSets($ref) : [],
             'voiceGroups' => VoiceCatalog::GROUPS, 'bundled' => PronunciationService::BUNDLED,
             'testText' => $testText, 'testVoice' => $testVoice, 'testProject' => $testProject, 'testResult' => $testResult,
+            'capsAudit' => $capsAudit, 'capsOn' => $layer === 'project' && $ref !== '' ? (int) (($auditProject['normalize_caps'] ?? 1)) === 1 : true,
+            'prefillWritten' => mb_substr((string) ($_GET['p'] ?? ''), 0, 100), 'prefillSpoken' => mb_substr((string) ($_GET['s'] ?? ''), 0, 200),
         ]);
     }
 
-    /** POST {_token, text, voice, speed} -> audio/wav, or JSON {ok:false,message} on failure. */
+    /** POST JSON {_token, layer, ref, pattern, replacement, whole_word?, case_sensitive?, note?} -> saves one rule (used by the chapter workbench). */
+    private static function pronunciationRule():void
+    {
+        $fail = static function (int $status, string $message): void { self::json(['ok' => false, 'message' => $message], $status); };
+        if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') { header('Allow: POST'); $fail(405, 'POST is required.'); return; }
+        $p = json_decode((string) file_get_contents('php://input'), true);
+        if (!is_array($p)) { $fail(400, 'The request was not valid JSON.'); return; }
+        if (!Csrf::validate(isset($p['_token']) ? (string) $p['_token'] : null)) { $fail(419, 'Security token expired. Reload the page.'); return; }
+        try {
+            $layer = (string) ($p['layer'] ?? '');
+            if (!isset(PronunciationService::LAYER_LABELS[$layer])) throw new \InvalidArgumentException('Choose where to save the rule.');
+            (new PronunciationService())->save($layer, $layer === 'default' ? '' : (string) ($p['ref'] ?? ''), (string) ($p['pattern'] ?? ''), (string) ($p['replacement'] ?? ''), !empty($p['case_sensitive']), !array_key_exists('whole_word', $p) || !empty($p['whole_word']), (string) ($p['note'] ?? ''));
+            self::json(['ok' => true, 'message' => 'Rule saved.']);
+        } catch (\InvalidArgumentException $error) {
+            $fail(422, $error->getMessage());
+        } catch (Throwable $error) {
+            error_log($error->__toString());
+            $fail(500, 'The rule could not be saved.');
+        }
+    }
+
+    /** POST {_token, text, voice, speed, apply_pronunciation?, project_id?, temp_rules?} -> audio/wav, or JSON {ok:false,message} on failure. */
     private static function voicePreview():void
     {
         $fail = static function (int $status, string $message): void {
@@ -155,9 +186,13 @@ final class App
         $spoken = $text;
         if (!empty($payload['apply_pronunciation'])) {
             $project = isset($payload['project_id']) && $payload['project_id'] !== '' ? (string) $payload['project_id'] : null;
-            if ($project !== null && !(new ProjectRepository())->find($project)) { $fail(404, 'Project not found.'); return; }
+            $row = $project !== null ? (new ProjectRepository())->find($project) : null;
+            if ($project !== null && !$row) { $fail(404, 'Project not found.'); return; }
             $service = new PronunciationService();
-            $spoken = $service->apply($text, $service->effective($project, $voice))['text'];
+            $effective = $service->effective($project, $voice);
+            // rules being tried right now, not saved anywhere
+            if (!empty($payload['temp_rules']) && is_array($payload['temp_rules'])) $effective = $service->withTemporary($effective, $payload['temp_rules']);
+            $spoken = $service->apply($text, $effective, $row === null || (int) ($row['normalize_caps'] ?? 1) === 1)['text'];
         }
         // Do not hold the session lock while Kokoro is generating.
         session_write_close();

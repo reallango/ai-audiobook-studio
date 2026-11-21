@@ -61,7 +61,7 @@ final class NarrationService
         foreach ((new LogicalSectionRepository())->blocks($logicalId) as $block) {
             $source = (string) $block['source_text'];
             $cleaned = self::clean($source);
-            $applied = $pron->apply($cleaned, $effective);
+            $applied = $pron->apply($cleaned, $effective, (int) ($project['normalize_caps'] ?? 1) === 1);
             $edit = $edits[$block['id']] ?? null;
             $excluded = $edit !== null && (int) $edit['excluded'] === 1;
             $override = $edit !== null && $edit['override_text'] !== null ? (string) $edit['override_text'] : null;
@@ -108,6 +108,21 @@ final class NarrationService
             ];
         }
         return $rows;
+    }
+
+    /**
+     * Cleaned source text of every paragraph in the included chapters (for scanning the book, e.g. for ALL-CAPS words).
+     * @return string[]
+     */
+    public function sourceTexts(string $projectId): array
+    {
+        $texts = [];
+        $repo = new LogicalSectionRepository();
+        foreach ($repo->all($projectId) as $section) {
+            if ((int) $section['included'] !== 1) continue;
+            foreach ($repo->blocks((string) $section['id']) as $block) $texts[] = self::clean((string) $block['source_text']);
+        }
+        return $texts;
     }
 
     public function setExcluded(string $projectId, string $logicalId, string $blockId, bool $excluded): void
