@@ -13,6 +13,7 @@
     return {
       provider: form.querySelector('[data-setting="provider"]').value.trim(),
       voice: form.querySelector('[data-setting="voice"]').value.trim(),
+      speed: Number(form.querySelector('[data-setting="speed"]').value),
       bitrate: Number(form.querySelector('[data-setting="bitrate"]').value)
     };
   }

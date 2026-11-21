@@ -55,12 +55,20 @@ try {
     if (!in_array($bitrate, [64, 96, 128], true)) {
         throw new InvalidArgumentException('Select a supported audio quality.');
     }
+    $speed = (float) ($payload['speed'] ?? 1.0);
+    if (!\App\Services\KokoroClient::validSpeed($speed)) {
+        throw new InvalidArgumentException('Speed must be between 0.5 and 2.0.');
+    }
+    if ($voice !== '' && !\App\Services\KokoroClient::validVoice($voice)) {
+        throw new InvalidArgumentException('Voice must look like am_michael, or a blend such as af_bella+af_sky.');
+    }
 
     $statement = Database::connection()->prepare(
         'UPDATE projects
          SET active_provider_profile_id=:provider,
              active_voice_profile_id=:voice,
              audio_bitrate_kbps=:bitrate,
+             tts_speed=:speed,
              updated_at=CURRENT_TIMESTAMP
          WHERE id=:id'
     );
@@ -68,6 +76,7 @@ try {
         'provider' => $provider,
         'voice' => $voice !== '' ? $voice : null,
         'bitrate' => $bitrate,
+        'speed' => $speed,
         'id' => $projectId,
     ]);
 
@@ -77,6 +86,7 @@ try {
         'settings' => [
             'provider' => $provider,
             'voice' => $voice,
+            'speed' => $speed,
             'bitrate' => $bitrate,
         ],
     ], JSON_UNESCAPED_SLASHES);

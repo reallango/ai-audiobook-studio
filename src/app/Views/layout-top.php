@@ -63,7 +63,7 @@ if (!isset($backUrl, $backLabel)) {
     <?php endif; ?>
     <a class="brand" href="<?= e(base_url()) ?>"><span class="brand-mark">A</span><span>AI Audiobook Studio</span></a>
   </div>
-  <nav><a href="<?= e(base_url()) ?>">Projects</a><a href="<?= e(base_url('diagnostics')) ?>">Diagnostics</a></nav>
+  <nav><a href="<?= e(base_url()) ?>">Projects</a><a href="<?= e(base_url('voice-lab')) ?>">Voice Lab</a><a href="<?= e(base_url('diagnostics')) ?>">Diagnostics</a></nav>
 </header>
 <main class="container">
 <?php if ($flash): ?><div class="flash <?= e($flash['type']) ?>"><?= e($flash['message']) ?></div><?php endif; ?>

@@ -7,17 +7,63 @@ use App\Repositories\SourceAnalysisRepository;
 use App\Services\EpubUploadService;
 use App\Services\EpubAnalysisService;
 use App\Services\ProjectService;
+use App\Services\KokoroClient;
+use App\Services\VoiceCatalog;
 use Throwable;
 final class App
 {
     public static function run(): void
     {
         $route=trim((string)($_GET['page']??'projects'),'/');
-        try{match($route){'api-health'=>self::json(self::health()),'diagnostics'=>self::view('diagnostics'),'projects','home',''=>self::projects(),'project-create'=>self::createProject(),'project'=>self::project(),'epub-upload'=>self::epubUpload(),'epub-analyze'=>self::epubAnalyze(),'source-sections'=>self::sourceSections(),'source-section'=>self::sourceSection(),'project-archive'=>self::archiveProject(),'project-restore'=>self::restoreProject(),'project-delete'=>self::deleteProject(),default=>self::notFound()};}
+        try{match($route){'api-health'=>self::json(self::health()),'diagnostics'=>self::view('diagnostics'),'projects','home',''=>self::projects(),'project-create'=>self::createProject(),'project'=>self::project(),'epub-upload'=>self::epubUpload(),'epub-analyze'=>self::epubAnalyze(),'source-sections'=>self::sourceSections(),'source-section'=>self::sourceSection(),'project-archive'=>self::archiveProject(),'project-restore'=>self::restoreProject(),'project-delete'=>self::deleteProject(),'voice-lab'=>self::voiceLab(),'voice-preview'=>self::voicePreview(),default=>self::notFound()};}
         catch(Throwable $error){error_log($error->__toString());http_response_code(500);self::view('error',['message'=>config('app.debug',false)?$error->getMessage():'The request could not be completed. Check the application log for details.']);}
     }
+    private static function voiceLab():void
+    {
+        self::view('voice-lab', [
+            'voiceGroups' => VoiceCatalog::GROUPS,
+            'sampleText' => VoiceCatalog::SAMPLE_TEXT,
+            'defaultVoice' => VoiceCatalog::DEFAULT_VOICE,
+            'defaultSpeed' => VoiceCatalog::DEFAULT_SPEED,
+            'maxChars' => KokoroClient::MAX_PREVIEW_CHARS,
+            'kokoroReady' => (string) config('tts.kokoro_api_key') !== '',
+        ]);
+    }
+
+    /** POST {_token, text, voice, speed} -> audio/wav, or JSON {ok:false,message} on failure. */
+    private static function voicePreview():void
+    {
+        $fail = static function (int $status, string $message): void {
+            http_response_code($status);
+            header('Content-Type: application/json; charset=utf-8');
+            header('Cache-Control: no-store');
+            echo json_encode(['ok' => false, 'message' => $message], JSON_UNESCAPED_SLASHES);
+        };
+        if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') { header('Allow: POST'); $fail(405, 'POST is required.'); return; }
+        $payload = json_decode((string) file_get_contents('php://input'), true);
+        if (!is_array($payload)) { $fail(400, 'The request was not valid JSON.'); return; }
+        if (!Csrf::validate(isset($payload['_token']) ? (string) $payload['_token'] : null)) { $fail(419, 'Security token expired. Reload the page.'); return; }
+        $text = (string) ($payload['text'] ?? '');
+        if (mb_strlen($text) > KokoroClient::MAX_PREVIEW_CHARS) { $fail(422, 'Preview text is limited to ' . KokoroClient::MAX_PREVIEW_CHARS . ' characters.'); return; }
+        // Do not hold the session lock while Kokoro is generating.
+        session_write_close();
+        try {
+            $wav = (new KokoroClient())->speech($text, (string) ($payload['voice'] ?? ''), (float) ($payload['speed'] ?? 1.0));
+        } catch (\InvalidArgumentException $error) {
+            $fail(422, $error->getMessage()); return;
+        } catch (Throwable $error) {
+            error_log($error->getMessage());
+            $fail(502, $error->getMessage()); return;
+        }
+        http_response_code(200);
+        header('Content-Type: audio/wav');
+        header('Content-Length: ' . strlen($wav));
+        header('Cache-Control: no-store');
+        echo $wav;
+    }
+
     private static function projects():void{$show=($_GET['archived']??'')==='1';self::view('projects',['projects'=>(new ProjectRepository())->all($show),'showArchived'=>$show]);}
-    private static function createProject():void{$errors=[];$values=['title'=>'','provider'=>'kokoro','voice'=>'','bitrate'=>96];if($_SERVER['REQUEST_METHOD']==='POST'){$values=['title'=>(string)($_POST['title']??''),'provider'=>(string)($_POST['provider']??'kokoro'),'voice'=>(string)($_POST['voice']??''),'bitrate'=>(int)($_POST['bitrate']??96)];if(!Csrf::validate($_POST['_token']??null))$errors[]='Security token expired. Reload the page and try again.';if(!$errors)try{$project=(new ProjectService())->create($values['title'],$values['provider'],$values['voice'],$values['bitrate']);self::flash('success','Project created.');self::redirect('project',['id'=>$project['id']]);}catch(Throwable $error){$errors[]=$error->getMessage();}}self::view('project-create',['errors'=>$errors,'values'=>$values]);}
+    private static function createProject():void{$errors=[];$values=['title'=>'','provider'=>'kokoro','voice'=>VoiceCatalog::DEFAULT_VOICE,'bitrate'=>96];if($_SERVER['REQUEST_METHOD']==='POST'){$values=['title'=>(string)($_POST['title']??''),'provider'=>(string)($_POST['provider']??'kokoro'),'voice'=>(string)($_POST['voice']??''),'bitrate'=>(int)($_POST['bitrate']??96)];if(!Csrf::validate($_POST['_token']??null))$errors[]='Security token expired. Reload the page and try again.';if(!$errors)try{$project=(new ProjectService())->create($values['title'],$values['provider'],$values['voice'],$values['bitrate']);self::flash('success','Project created.');self::redirect('project',['id'=>$project['id']]);}catch(Throwable $error){$errors[]=$error->getMessage();}}self::view('project-create',['errors'=>$errors,'values'=>$values]);}
     private static function project():void{$project=self::requireProject();$asset=(new SourceAssetRepository())->findByProject($project['id']);$analysis=new SourceAnalysisRepository();self::view('project',['project'=>$project,'sourceAsset'=>$asset,'sourceAnalyzed'=>$analysis->analyzed($project['id'])]);}
     private static function epubUpload():void{$project=self::requireProject();$repo=new SourceAssetRepository();if($repo->findByProject($project['id'])){self::flash('error','This project already has an immutable source EPUB.');self::redirect('project',['id'=>$project['id']]);}$errorMessage=null;if($_SERVER['REQUEST_METHOD']==='POST'){self::requireCsrf();try{$asset=(new EpubUploadService())->upload($project['id'],$_FILES['epub']??[]);self::flash('success','EPUB stored with SHA-256 '.$asset['sha256'].'.');self::redirect('project',['id'=>$project['id']]);}catch(Throwable $error){$errorMessage=$error->getMessage();}}self::view('epub-upload',['project'=>$project,'errorMessage'=>$errorMessage]);}
     private static function epubAnalyze():void{self::requirePost();self::requireCsrf();$project=self::requireProject();try{$result=(new EpubAnalysisService())->analyze($project['id']);self::flash('success','Created '.$result['sections'].' source sections and '.$result['blocks'].' source blocks.');self::redirect('source-sections',['id'=>$project['id']]);}catch(Throwable $error){self::flash('error',$error->getMessage());self::redirect('project',['id'=>$project['id']]);}}

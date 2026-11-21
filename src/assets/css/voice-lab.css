@@ -1,0 +1,11 @@
+.voice-lab textarea { width: 100%; box-sizing: border-box; font: inherit; padding: .6rem .75rem; resize: vertical; }
+.voice-lab .lab-text-tools { display: flex; align-items: center; gap: 1rem; margin: .5rem 0 1.25rem; flex-wrap: wrap; }
+.voice-lab .lab-text-tools span { opacity: .7; font-size: .9rem; }
+.voice-lab .lab-takes { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1.25rem; }
+.voice-lab .lab-take { border: 1px solid rgba(127, 127, 127, .35); border-radius: 10px; padding: 1rem 1.1rem; display: grid; gap: .75rem; align-content: start; }
+.voice-lab .lab-take h2 { margin: 0; font-size: 1.1rem; }
+.voice-lab .lab-take label { display: grid; gap: .3rem; }
+.voice-lab .lab-take input, .voice-lab .lab-take select { width: 100%; box-sizing: border-box; }
+.voice-lab .lab-actions { display: flex; gap: .75rem; align-items: center; flex-wrap: wrap; margin-top: .5rem; }
+.voice-lab .lab-status { margin: 0; min-height: 1.2em; font-size: .9rem; opacity: .85; }
+.voice-lab audio { width: 100%; }

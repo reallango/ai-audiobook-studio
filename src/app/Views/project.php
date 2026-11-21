@@ -28,6 +28,7 @@ $settingsEndpoint = $basePath . '/project_settings.php';
 $providerValue = (string) ($project['active_provider_profile_id'] ?: 'kokoro');
 $voiceValue = (string) ($project['active_voice_profile_id'] ?: '');
 $bitrateValue = (int) $project['audio_bitrate_kbps'];
+$speedValue = (float) ($project['tts_speed'] ?? 1.0);
 
 require APP_ROOT . '/app/Views/layout-top.php';
 ?>
@@ -76,7 +77,9 @@ require APP_ROOT . '/app/Views/layout-top.php';
     <span class="workflow-step">3</span><h2>Generation settings</h2>
     <form id="project-settings" data-endpoint="<?= e($settingsEndpoint) ?>" data-token="<?= e(Csrf::token()) ?>" data-project="<?= e($project['id']) ?>">
       <label>Provider<input data-setting="provider" value="<?= e($providerValue) ?>" maxlength="100" required <?= $archived ? 'disabled' : '' ?>></label>
-      <label>Voice profile<input data-setting="voice" value="<?= e($voiceValue) ?>" maxlength="100" placeholder="Example: bm_lewis" <?= $archived ? 'disabled' : '' ?>></label>
+      <label>Voice<input data-setting="voice" list="kokoro-voices" value="<?= e($voiceValue) ?>" maxlength="100" placeholder="Example: am_michael" <?= $archived ? 'disabled' : '' ?>></label>
+      <datalist id="kokoro-voices"><?php foreach (\App\Services\VoiceCatalog::all() as $voiceName): ?><option value="<?= e($voiceName) ?>"><?php endforeach; ?></datalist>
+      <label>Speed <small>0.5 to 2.0, 1.0 is normal</small><input data-setting="speed" type="number" min="0.5" max="2" step="0.05" value="<?= e(number_format($speedValue, 2, '.', '')) ?>" required <?= $archived ? 'disabled' : '' ?>></label>
       <label>Audio quality<select data-setting="bitrate" <?= $archived ? 'disabled' : '' ?>><option value="64" <?= $bitrateValue === 64 ? 'selected' : '' ?>>64 kbps AAC, draft</option><option value="96" <?= $bitrateValue === 96 ? 'selected' : '' ?>>96 kbps AAC, default</option><option value="128" <?= $bitrateValue === 128 ? 'selected' : '' ?>>128 kbps AAC, high</option></select></label>
       <?php if (!$archived): ?><div class="settings-actions"><span data-settings-state>All changes saved</span><button type="button" data-save-settings disabled>Save settings</button></div><?php endif; ?>
     </form>
