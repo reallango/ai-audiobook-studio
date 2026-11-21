@@ -1,0 +1,15 @@
+<?php
+declare(strict_types=1);
+namespace App\Repositories;
+use App\Core\Database;
+final class LogicalSectionRepository
+{
+ public function exists(string $p):bool{$s=Database::connection()->prepare('SELECT 1 FROM logical_sections WHERE project_id=:p LIMIT 1');$s->execute(['p'=>$p]);return(bool)$s->fetchColumn();}
+ public function all(string $p):array{$s=Database::connection()->prepare('SELECT l.*,COUNT(x.source_section_id) source_count,COALESCE(SUM(CASE WHEN x.start_block_index IS NULL AND x.end_block_index IS NULL THEN s.word_count ELSE 0 END),0) full_word_count,GROUP_CONCAT(s.href," | ") source_hrefs FROM logical_sections l LEFT JOIN logical_section_sources x ON x.logical_section_id=l.id LEFT JOIN source_sections s ON s.id=x.source_section_id WHERE l.project_id=:p GROUP BY l.id ORDER BY l.position');$s->execute(['p'=>$p]);$rows=$s->fetchAll();foreach($rows as&$r){$r['word_count']=$this->wordCount($r['id'])+$r['full_word_count'];$r['composition']=$this->sources($r['id']);}unset($r);return$rows;}
+ public function find(string $p,string $id):?array{$s=Database::connection()->prepare('SELECT * FROM logical_sections WHERE project_id=:p AND id=:id');$s->execute(['p'=>$p,'id'=>$id]);return$s->fetch()?:null;}
+ public function sources(string $id):array{$s=Database::connection()->prepare('SELECT s.*,x.source_order,x.start_block_index,x.end_block_index FROM logical_section_sources x JOIN source_sections s ON s.id=x.source_section_id WHERE x.logical_section_id=:id ORDER BY x.source_order');$s->execute(['id'=>$id]);return$s->fetchAll();}
+ public function blocks(string $id):array{$s=Database::connection()->prepare('SELECT b.*,x.source_order FROM logical_section_sources x JOIN source_blocks b ON b.source_section_id=x.source_section_id WHERE x.logical_section_id=:id AND b.block_index>=COALESCE(x.start_block_index,0) AND b.block_index<=COALESCE(x.end_block_index,2147483647) ORDER BY x.source_order,b.block_index');$s->execute(['id'=>$id]);return$s->fetchAll();}
+ public function settings(string $p):array{$s=Database::connection()->prepare('SELECT * FROM project_section_settings WHERE project_id=:p');$s->execute(['p'=>$p]);return$s->fetch()?:['project_id'=>$p,'number_style'=>'preserve','capitalization'=>'preserve'];}
+ public function lastRevision(string $p):?array{$s=Database::connection()->prepare('SELECT * FROM logical_structure_revisions WHERE project_id=:p AND undone_at IS NULL ORDER BY id DESC LIMIT 1');$s->execute(['p'=>$p]);return$s->fetch()?:null;}
+ private function wordCount(string$id):int{$s=Database::connection()->prepare('SELECT b.source_text FROM logical_section_sources x JOIN source_blocks b ON b.source_section_id=x.source_section_id WHERE x.logical_section_id=:id AND (x.start_block_index IS NOT NULL OR x.end_block_index IS NOT NULL) AND b.block_index>=COALESCE(x.start_block_index,0) AND b.block_index<=COALESCE(x.end_block_index,2147483647)');$s->execute(['id'=>$id]);$n=0;foreach($s->fetchAll(\PDO::FETCH_COLUMN)as$t)$n+=preg_match_all('/[\p{L}\p{N}]+(?:[\'’\-][\p{L}\p{N}]+)*/u',$t);return$n;}
+}

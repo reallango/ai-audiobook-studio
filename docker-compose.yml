@@ -1,0 +1,17 @@
+services:
+  audiobook-studio:
+    build: .
+    # After the GitHub Actions build you can use the published image instead:
+    # image: ghcr.io/reallango/ai-audiobook-studio:latest
+    container_name: audiobook-studio
+    restart: unless-stopped
+    ports:
+      - "8085:80"
+    environment:
+      KOKORO_URL: ${KOKORO_URL:-http://192.168.1.130:8880}
+      KOKORO_API_KEY: ${KOKORO_API_KEY:-}
+    volumes:
+      - audiobook-storage:/app/AI-Audiobook/storage
+
+volumes:
+  audiobook-storage:

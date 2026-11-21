@@ -1,0 +1,14 @@
+﻿# Private working material, never commit (test scripts contain an API key)
+reference/
+kokoro-scripts/
+.env
+
+# Runtime data
+src/storage/*
+!src/storage/**/.gitkeep
+*.wav
+*.epub
+*.sqlite*
+
+# Homelab notes (internal IPs and findings)
+bosun-security-issues.md

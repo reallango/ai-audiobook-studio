@@ -1,0 +1,14 @@
+{
+  "name": "Default suspect-word scan",
+  "version": 1,
+  "enabled_scanners": [
+    "all_caps",
+    "mixed_case",
+    "apostrophe",
+    "hyphenated",
+    "numbers",
+    "unicode_symbols",
+    "long_tokens"
+  ],
+  "ignore_lists": ["common_words"]
+}

@@ -1,0 +1,1 @@
+<?php declare(strict_types=1); $pageTitle='Error'; require APP_ROOT.'/app/Views/layout-top.php'; ?><section class="empty"><div class="empty-icon error">!</div><h1>Request failed</h1><p><?=e((string)$message)?></p><a class="button secondary" href="<?=e(base_url())?>">Return to projects</a></section><?php require APP_ROOT.'/app/Views/layout-bottom.php'; ?>
