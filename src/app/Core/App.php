@@ -11,13 +11,14 @@ use App\Services\KokoroClient;
 use App\Services\VoiceCatalog;
 use App\Services\PronunciationService;
 use App\Services\NarrationService;
+use App\Services\GenerationService;
 use Throwable;
 final class App
 {
     public static function run(): void
     {
         $route=trim((string)($_GET['page']??'projects'),'/');
-        try{match($route){'api-health'=>self::json(self::health()),'diagnostics'=>self::view('diagnostics'),'projects','home',''=>self::projects(),'project-create'=>self::createProject(),'project'=>self::project(),'epub-upload'=>self::epubUpload(),'epub-analyze'=>self::epubAnalyze(),'source-sections'=>self::sourceSections(),'source-section'=>self::sourceSection(),'project-archive'=>self::archiveProject(),'project-restore'=>self::restoreProject(),'project-delete'=>self::deleteProject(),'voice-lab'=>self::voiceLab(),'voice-preview'=>self::voicePreview(),'pronunciation'=>self::pronunciation(),'chapters'=>self::chapters(),'chapter-review'=>self::chapterReview(),default=>self::notFound()};}
+        try{match($route){'api-health'=>self::json(self::health()),'diagnostics'=>self::view('diagnostics'),'projects','home',''=>self::projects(),'project-create'=>self::createProject(),'project'=>self::project(),'epub-upload'=>self::epubUpload(),'epub-analyze'=>self::epubAnalyze(),'source-sections'=>self::sourceSections(),'source-section'=>self::sourceSection(),'project-archive'=>self::archiveProject(),'project-restore'=>self::restoreProject(),'project-delete'=>self::deleteProject(),'voice-lab'=>self::voiceLab(),'voice-preview'=>self::voicePreview(),'pronunciation'=>self::pronunciation(),'chapters'=>self::chapters(),'chapter-review'=>self::chapterReview(),'chapter-audio'=>self::chapterAudio(),'audio'=>self::audio(),default=>self::notFound()};}
         catch(Throwable $error){error_log($error->__toString());http_response_code(500);self::view('error',['message'=>config('app.debug',false)?$error->getMessage():'The request could not be completed. Check the application log for details.']);}
     }
     private static function voiceLab():void
@@ -232,11 +233,94 @@ final class App
         }
         $order = array_column($svc->overview($projectId), 'id');
         $at = array_search($sectionId, $order, true);
+        try {
+            $audio = (new GenerationService())->status($projectId, $sectionId);
+        } catch (\InvalidArgumentException $error) {
+            $audio = null; // archived project, or an invalid project voice
+        }
         self::view('chapter-review', [
-            'project' => $project, 'chapter' => $chapter, 'focus' => (string) ($_GET['b'] ?? ''),
+            'project' => $project, 'chapter' => $chapter, 'focus' => (string) ($_GET['b'] ?? ''), 'audio' => $audio,
+            'audioToken' => Csrf::token(),
             'prevId' => $at !== false && $at > 0 ? $order[$at - 1] : null,
             'nextId' => $at !== false && $at < count($order) - 1 ? $order[$at + 1] : null,
         ]);
+    }
+
+    /** POST JSON {_token, project_id, section, action: prepare|next|assemble|reset, segment_id?} -> JSON. One step per call. */
+    private static function chapterAudio():void
+    {
+        $fail = static function (int $status, string $message): void { self::json(['ok' => false, 'message' => $message], $status); };
+        if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') { header('Allow: POST'); $fail(405, 'POST is required.'); return; }
+        $p = json_decode((string) file_get_contents('php://input'), true);
+        if (!is_array($p)) { $fail(400, 'The request was not valid JSON.'); return; }
+        if (!Csrf::validate(isset($p['_token']) ? (string) $p['_token'] : null)) { $fail(419, 'Security token expired. Reload the page.'); return; }
+        $projectId = (string) ($p['project_id'] ?? '');
+        $sectionId = (string) ($p['section'] ?? '');
+        if (!(new ProjectRepository())->find($projectId)) { $fail(404, 'Project not found.'); return; }
+        // Generation takes seconds per segment: do not hold the session lock meanwhile.
+        session_write_close();
+        $gen = new GenerationService();
+        try {
+            switch ((string) ($p['action'] ?? '')) {
+                case 'prepare':
+                    self::json(['ok' => true] + $gen->prepare($projectId, $sectionId));
+                    return;
+                case 'next':
+                    self::json(['ok' => true] + $gen->generateNext($projectId, $sectionId));
+                    return;
+                case 'assemble':
+                    self::json(['ok' => true] + $gen->assemble($projectId, $sectionId));
+                    return;
+                case 'reset':
+                    $segment = isset($p['segment_id']) && $p['segment_id'] !== '' ? (string) $p['segment_id'] : null;
+                    self::json(['ok' => true, 'reset' => $gen->reset($projectId, $sectionId, $segment)]);
+                    return;
+                default:
+                    $fail(422, 'Unknown action.');
+                    return;
+            }
+        } catch (\InvalidArgumentException $error) {
+            $fail(422, $error->getMessage());
+        } catch (Throwable $error) {
+            error_log($error->__toString());
+            $fail(500, config('app.debug', false) ? $error->getMessage() : 'The step failed. Check the application log.');
+        }
+    }
+
+    /** GET ?page=audio&id=PROJECT&kind=segment|chapter&ref=ID[&download=1]: streams a stored WAV, with Range support. */
+    private static function audio():void
+    {
+        $projectId = (string) ($_GET['id'] ?? '');
+        $kind = (string) ($_GET['kind'] ?? '');
+        $path = (new GenerationService())->audioFile($projectId, $kind, (string) ($_GET['ref'] ?? ''));
+        if ($path === null) { self::notFound(); return; }
+        session_write_close();
+        $size = (int) filesize($path);
+        $start = 0;
+        $end = $size - 1;
+        $status = 200;
+        if (isset($_SERVER['HTTP_RANGE']) && preg_match('/^bytes=(\d*)-(\d*)$/', trim((string) $_SERVER['HTTP_RANGE']), $m) && ($m[1] !== '' || $m[2] !== '')) {
+            if ($m[1] === '') { $start = max(0, $size - (int) $m[2]); } else { $start = (int) $m[1]; if ($m[2] !== '') $end = min($end, (int) $m[2]); }
+            if ($start > $end || $start >= $size) { http_response_code(416); header('Content-Range: bytes */' . $size); return; }
+            $status = 206;
+        }
+        http_response_code($status);
+        header('Content-Type: audio/wav');
+        header('Accept-Ranges: bytes');
+        header('Cache-Control: private, no-cache');
+        if ($status === 206) header("Content-Range: bytes $start-$end/$size");
+        header('Content-Length: ' . ($end - $start + 1));
+        if (($_GET['download'] ?? '') === '1') header('Content-Disposition: attachment; filename="' . preg_replace('/[^A-Za-z0-9._-]+/', '-', (string) ($_GET['name'] ?? 'audio')) . '.wav"');
+        $h = fopen($path, 'rb');
+        fseek($h, $start);
+        for ($left = $end - $start + 1; $left > 0 && !feof($h); ) {
+            $chunk = fread($h, min(1 << 18, $left));
+            if ($chunk === false || $chunk === '') break;
+            echo $chunk;
+            $left -= strlen($chunk);
+            flush();
+        }
+        fclose($h);
     }
 
     private static function projects():void{$show=($_GET['archived']??'')==='1';self::view('projects',['projects'=>(new ProjectRepository())->all($show),'showArchived'=>$show]);}

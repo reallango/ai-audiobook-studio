@@ -24,6 +24,22 @@ final class NarrationService
         return trim($text);
     }
 
+    /** True when two headings say the same thing, for example "CHAPTER ONE" and "Chapter 1". */
+    public static function sameTitle(string $a, string $b): bool
+    {
+        $norm = static function (string $s): string {
+            $s = mb_strtolower(self::clean($s));
+            $ones = ['zero' => 0, 'one' => 1, 'two' => 2, 'three' => 3, 'four' => 4, 'five' => 5, 'six' => 6, 'seven' => 7, 'eight' => 8, 'nine' => 9, 'ten' => 10,
+                'eleven' => 11, 'twelve' => 12, 'thirteen' => 13, 'fourteen' => 14, 'fifteen' => 15, 'sixteen' => 16, 'seventeen' => 17, 'eighteen' => 18, 'nineteen' => 19];
+            $tens = ['twenty' => 20, 'thirty' => 30, 'forty' => 40, 'fifty' => 50, 'sixty' => 60, 'seventy' => 70, 'eighty' => 80, 'ninety' => 90];
+            $s = preg_replace_callback('/\b(' . implode('|', array_keys($tens)) . ')(?:[\s-]+(' . implode('|', array_keys($ones)) . '))?\b/u', static fn (array $m): string => (string) ($tens[$m[1]] + ($ones[$m[2] ?? ''] ?? 0)), $s) ?? $s;
+            $s = preg_replace_callback('/\b(' . implode('|', array_keys($ones)) . ')\b/u', static fn (array $m): string => (string) $ones[$m[1]], $s) ?? $s;
+            return preg_replace('/[^\p{L}\p{N}]+/u', '', $s) ?? $s;
+        };
+        $x = $norm($a);
+        return $x !== '' && $x === $norm($b);
+    }
+
     /** @return array<string,mixed> */
     public function chapter(string $projectId, string $logicalId): array
     {
@@ -61,8 +77,10 @@ final class NarrationService
             }
         }
 
+        // The chapter title is announced first, unless the EPUB already opens with that same heading.
         $title = trim((string) $section['title']);
-        $text = ($title !== '' ? $title . '.' . "\n\n" : '') . implode("\n\n", $paragraphs);
+        $announce = $title !== '' && !(isset($paragraphs[0]) && self::sameTitle($paragraphs[0], $title));
+        $text = ($announce ? $title . '.' . "\n\n" : '') . implode("\n\n", $paragraphs);
         $hash = hash('sha256', $text);
         $approval = $this->approval($logicalId);
         $status = $approval === null ? 'unreviewed' : ($approval['narration_sha256'] === $hash ? 'approved' : 'changed');

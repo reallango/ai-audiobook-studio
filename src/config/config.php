@@ -16,7 +16,7 @@ return [
     'paths' => [
         'ffmpeg' => getenv('FFMPEG_PATH') ?: '/usr/bin/ffmpeg',
         'ffprobe' => getenv('FFPROBE_PATH') ?: '/usr/bin/ffprobe',
-        'projects' => APP_ROOT . '/storage/projects',
+        'projects' => getenv('AI_AUDIOBOOK_PROJECTS_DIR') ?: APP_ROOT . '/storage/projects',
         'cache' => APP_ROOT . '/storage/cache',
         'logs' => APP_ROOT . '/storage/logs',
         'tmp' => APP_ROOT . '/storage/tmp',

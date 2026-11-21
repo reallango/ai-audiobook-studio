@@ -41,12 +41,16 @@ check('clean collapses whitespace and invisible characters', NarrationService::c
 $c = $svc->chapter('p', 'L');
 check('unreviewed at first', $c['status'], 'unreviewed');
 check('voice comes from the project', $c['voice'], 'am_michael');
-check('text is cleaned, rules applied, title first', $c['text'], "Chapter 1.\n\nChapter One\n\nSiss-ko walked to Bajor.\n\nPlain text.");
+check('the EPUB heading replaces the announced title when they match', $c['text'], "Chapter One\n\nSiss-ko walked to Bajor.\n\nPlain text.");
+check('heading matcher: digits, words, case, punctuation', [
+    NarrationService::sameTitle('CHAPTER ONE', 'Chapter 1'), NarrationService::sameTitle('Chapter Twenty-One', 'chapter 21.'),
+    NarrationService::sameTitle('Chapter 2', 'Chapter 12'), NarrationService::sameTitle('Prologue', 'Chapter 1'), NarrationService::sameTitle('', ''),
+], [true, true, false, false, false]);
 check('a block with only removed text is not narrated', $c['items'][2]['narration'], '');
 
 // edits
 $svc->setExcluded('p', 'L', 'b4', true);
-check('excluding drops the block', $svc->chapter('p', 'L')['text'], "Chapter 1.\n\nChapter One\n\nSiss-ko walked to Bajor.");
+check('excluding drops the block', $svc->chapter('p', 'L')['text'], "Chapter One\n\nSiss-ko walked to Bajor.");
 $svc->setOverride('p', 'L', 'b2', 'Siss-ko walked to Bay-jor.');
 check('override replaces computed text', $svc->chapter('p', 'L')['items'][1]['narration'], 'Siss-ko walked to Bay-jor.');
 $svc->setOverride('p', 'L', 'b2', '');

@@ -44,6 +44,68 @@ $excludedCount = count(array_filter($chapter['items'], static fn (array $i): boo
   <pre><?= e($chapter['text']) ?></pre>
 </details>
 
+<?php
+$mmss = static fn (int $ms): string => sprintf('%d:%02d', intdiv($ms, 60000), intdiv($ms % 60000, 1000));
+$audioUrl = static fn (string $kind, string $ref, array $extra = []): string => base_url('audio', ['id' => $project['id'], 'kind' => $kind, 'ref' => $ref] + $extra);
+?>
+<?php if ($audio !== null): $counts = $audio['counts']; ?>
+<section class="audio-panel" data-audio-panel
+         data-endpoint="<?= e(base_url('chapter-audio')) ?>" data-token="<?= e($audioToken) ?>"
+         data-project="<?= e((string) $project['id']) ?>" data-section="<?= e((string) $section['id']) ?>"
+         data-needs-prepare="<?= $audio['needs_prepare'] || !$audio['prepared'] ? '1' : '0' ?>">
+  <h2>Audio</h2>
+  <?php if (!$audio['approved']): ?>
+    <p class="muted">Approve the chapter first. Audio is made from the approved text, so it can be reviewed before any generation time is spent.
+      Voice <code><?= e($audio['voice']) ?></code> at <?= e(number_format($audio['speed'], 2)) ?>x (change it in the project settings).</p>
+  <?php else: ?>
+    <p>Voice <code><?= e($audio['voice']) ?></code> at <?= e(number_format($audio['speed'], 2)) ?>x.
+      <?php if ($audio['prepared']): ?>
+        <?= (int) $counts['done'] ?> of <?= (int) $counts['total'] ?> segments have audio<?= $counts['failed'] ? ', <strong>' . (int) $counts['failed'] . ' failed</strong>' : '' ?>.
+      <?php else: ?>Not started.<?php endif; ?>
+      <?php if ($audio['needs_prepare'] && $audio['prepared']): ?><br><strong>The text, voice or speed changed since the segments were made.</strong> Generating again keeps every unchanged segment and redoes only the rest.<?php endif; ?>
+    </p>
+    <div class="audio-actions">
+      <button type="button" data-generate><?= !$audio['prepared'] ? 'Generate audio' : ($audio['ready_to_assemble'] && !$audio['needs_prepare'] ? ($audio['chapter_audio'] && !$audio['audio_stale'] ? 'Rebuild chapter audio' : 'Build chapter audio') : 'Generate audio') ?></button>
+      <?php if ($counts['failed'] > 0): ?><button type="button" class="button secondary" data-retry>Retry failed segments</button><?php endif; ?>
+      <button type="button" class="button secondary" data-stop hidden>Stop after this segment</button>
+    </div>
+    <div class="audio-progress" hidden><div data-bar></div></div>
+    <p class="audio-status" data-audio-status aria-live="polite"></p>
+
+    <?php if ($audio['chapter_audio']): $ca = $audio['chapter_audio']; ?>
+      <div class="audio-chapter">
+        <h3>Chapter audio <?= $audio['audio_stale'] ? '<span class="chapter-status changed">out of date, rebuild it</span>' : '' ?></h3>
+        <audio controls preload="none" src="<?= e($audioUrl('chapter', (string) $section['id'])) ?>"></audio>
+        <p><?= e($mmss((int) $ca['duration_ms'])) ?> long, <?= e(number_format($ca['byte_size'] / 1048576, 1)) ?> MB WAV,
+          <a href="<?= e($audioUrl('chapter', (string) $section['id'], ['download' => 1, 'name' => 'chapter-' . str_pad((string) $section['position'], 3, '0', STR_PAD_LEFT) . '-' . preg_replace('/[^a-z0-9]+/i', '-', (string) $section['title'])])) ?>">download</a></p>
+      </div>
+    <?php endif; ?>
+
+    <?php if ($audio['segments']): ?>
+      <details class="audio-segments">
+        <summary>Segments (<?= (int) $counts['total'] ?>)</summary>
+        <table class="chapters-table">
+          <thead><tr><th>#</th><th>Text</th><th>Status</th><th>Length</th><th>Listen</th><th></th></tr></thead>
+          <tbody>
+          <?php foreach ($audio['segments'] as $seg): ?>
+            <tr>
+              <td><?= (int) $seg['position'] + 1 ?></td>
+              <td><?= e(mb_strlen((string) $seg['text']) > 110 ? mb_substr((string) $seg['text'], 0, 110) . '…' : (string) $seg['text']) ?></td>
+              <td><span class="seg-status <?= e(strtolower((string) $seg['status'])) ?>"><?= e(strtolower((string) $seg['status'])) ?></span><?= $seg['error'] ? '<br><small>' . e((string) $seg['error']) . '</small>' : '' ?></td>
+              <td><?= $seg['duration_ms'] !== null ? e($mmss((int) $seg['duration_ms'])) : '' ?></td>
+              <td><?php if ($seg['status'] === 'DONE'): ?><audio controls preload="none" src="<?= e($audioUrl('segment', (string) $seg['id'])) ?>"></audio><?php endif; ?></td>
+              <td><button type="button" class="link-button" data-reset="<?= e((string) $seg['id']) ?>">redo</button></td>
+            </tr>
+          <?php endforeach; ?>
+          </tbody>
+        </table>
+      </details>
+    <?php endif; ?>
+  <?php endif; ?>
+</section>
+<script src="<?= e(base_url('assets/js/chapter-audio.js')) ?>" defer></script>
+<?php endif; ?>
+
 <section class="review-list">
   <div class="review-cols"><span>Original from the EPUB</span><span>Narration</span></div>
   <?php foreach ($chapter['items'] as $item): ?>

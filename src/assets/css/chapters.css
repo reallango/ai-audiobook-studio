@@ -23,3 +23,19 @@
 .edit-block textarea { width: 100%; box-sizing: border-box; font: inherit; padding: .5rem; }
 .link-button { background: none; border: 0; padding: 0; color: inherit; text-decoration: underline; cursor: pointer; font: inherit; font-size: .85rem; }
 @media (max-width: 760px) { .review-item, .review-cols { grid-template-columns: 1fr; } }
+
+.audio-panel { border: 1px solid rgba(127, 127, 127, .35); border-radius: 10px; padding: 1rem 1.25rem; margin: 0 0 1.5rem; }
+.audio-panel h2 { margin: 0 0 .5rem; font-size: 1.15rem; }
+.audio-actions { display: flex; gap: .6rem; flex-wrap: wrap; margin: .75rem 0; }
+.audio-progress { height: .6rem; border-radius: 999px; background: rgba(127, 127, 127, .25); overflow: hidden; margin: .5rem 0; }
+.audio-progress > div { height: 100%; width: 0; background: rgba(80, 120, 220, .85); transition: width .3s; }
+.audio-status { min-height: 1.2em; opacity: .85; margin: .25rem 0; }
+.audio-chapter { margin-top: 1rem; }
+.audio-chapter h3 { margin: 0 0 .4rem; font-size: 1rem; }
+.audio-chapter audio, .audio-segments audio { width: 100%; max-width: 28rem; }
+.audio-segments { margin-top: 1rem; }
+.audio-segments audio { height: 2rem; }
+.seg-status { font-size: .8rem; padding: .05rem .45rem; border-radius: 999px; border: 1px solid rgba(127, 127, 127, .5); }
+.seg-status.done { background: rgba(46, 160, 67, .18); border-color: rgba(46, 160, 67, .7); }
+.seg-status.failed { background: rgba(200, 60, 50, .18); border-color: rgba(200, 60, 50, .7); }
+.seg-status.generating { background: rgba(80, 120, 220, .18); }
