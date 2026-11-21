@@ -9,13 +9,14 @@ use App\Services\EpubAnalysisService;
 use App\Services\ProjectService;
 use App\Services\KokoroClient;
 use App\Services\VoiceCatalog;
+use App\Services\PronunciationService;
 use Throwable;
 final class App
 {
     public static function run(): void
     {
         $route=trim((string)($_GET['page']??'projects'),'/');
-        try{match($route){'api-health'=>self::json(self::health()),'diagnostics'=>self::view('diagnostics'),'projects','home',''=>self::projects(),'project-create'=>self::createProject(),'project'=>self::project(),'epub-upload'=>self::epubUpload(),'epub-analyze'=>self::epubAnalyze(),'source-sections'=>self::sourceSections(),'source-section'=>self::sourceSection(),'project-archive'=>self::archiveProject(),'project-restore'=>self::restoreProject(),'project-delete'=>self::deleteProject(),'voice-lab'=>self::voiceLab(),'voice-preview'=>self::voicePreview(),default=>self::notFound()};}
+        try{match($route){'api-health'=>self::json(self::health()),'diagnostics'=>self::view('diagnostics'),'projects','home',''=>self::projects(),'project-create'=>self::createProject(),'project'=>self::project(),'epub-upload'=>self::epubUpload(),'epub-analyze'=>self::epubAnalyze(),'source-sections'=>self::sourceSections(),'source-section'=>self::sourceSection(),'project-archive'=>self::archiveProject(),'project-restore'=>self::restoreProject(),'project-delete'=>self::deleteProject(),'voice-lab'=>self::voiceLab(),'voice-preview'=>self::voicePreview(),'pronunciation'=>self::pronunciation(),default=>self::notFound()};}
         catch(Throwable $error){error_log($error->__toString());http_response_code(500);self::view('error',['message'=>config('app.debug',false)?$error->getMessage():'The request could not be completed. Check the application log for details.']);}
     }
     private static function voiceLab():void
@@ -27,6 +28,107 @@ final class App
             'defaultSpeed' => VoiceCatalog::DEFAULT_SPEED,
             'maxChars' => KokoroClient::MAX_PREVIEW_CHARS,
             'kokoroReady' => (string) config('tts.kokoro_api_key') !== '',
+            'projects' => (new ProjectRepository())->all(false),
+        ]);
+    }
+
+    /** Pronunciation manager: one layer at a time (default, voice, series set, project), plus a rewrite test. */
+    private static function pronunciation():void
+    {
+        $svc = new PronunciationService();
+        $layers = PronunciationService::LAYER_LABELS;
+        $projects = (new ProjectRepository())->all(false);
+        $sets = $svc->sets();
+
+        $layer = (string) ($_GET['layer'] ?? $_POST['layer'] ?? 'default');
+        if (!isset($layers[$layer])) $layer = 'default';
+        $ref = (string) ($_GET['ref'] ?? $_POST['ref'] ?? '');
+        if ($layer === 'default') $ref = '';
+        if ($layer === 'voice' && !KokoroClient::validVoice($ref)) $ref = VoiceCatalog::DEFAULT_VOICE;
+        if ($layer === 'set' && !$svc->set($ref)) $ref = $sets ? (string) $sets[0]['id'] : '';
+        if ($layer === 'project' && !(new ProjectRepository())->find($ref)) $ref = $projects ? (string) $projects[0]['id'] : '';
+
+        if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
+            $back = ['layer' => $layer, 'ref' => $ref];
+            if (!Csrf::validate(isset($_POST['_token']) ? (string) $_POST['_token'] : null)) {
+                self::flash('error', 'Security token expired. Try again.');
+                self::redirect('pronunciation', $back);
+            }
+            try {
+                $action = (string) ($_POST['action'] ?? '');
+                switch ($action) {
+                    case 'add_rule':
+                        $svc->save($layer, $ref, (string) ($_POST['pattern'] ?? ''), (string) ($_POST['replacement'] ?? ''), isset($_POST['case_sensitive']), isset($_POST['whole_word']), (string) ($_POST['note'] ?? ''));
+                        self::flash('success', 'Rule saved.');
+                        break;
+                    case 'toggle_rule':
+                        $svc->setEnabled((int) ($_POST['id'] ?? 0), ($_POST['enabled'] ?? '') === '1');
+                        break;
+                    case 'delete_rule':
+                        $svc->delete((int) ($_POST['id'] ?? 0));
+                        self::flash('success', 'Rule deleted.');
+                        break;
+                    case 'import_json':
+                        $json = (string) ($_POST['json'] ?? '');
+                        if (!empty($_FILES['json_file']['tmp_name']) && is_uploaded_file($_FILES['json_file']['tmp_name'])) $json = (string) file_get_contents($_FILES['json_file']['tmp_name']);
+                        $count = $svc->importMap($layer, $ref, PronunciationService::decodeJsonMap($json));
+                        self::flash('success', "Imported $count rules.");
+                        break;
+                    case 'import_bundled':
+                        $file = (string) ($_POST['bundled'] ?? '');
+                        if (!isset(PronunciationService::BUNDLED[$file])) throw new \InvalidArgumentException('Unknown bundled list.');
+                        $name = PronunciationService::BUNDLED[$file];
+                        $existing = array_values(array_filter($sets, static fn (array $s): bool => $s['name'] === $name));
+                        $setId = $existing ? (string) $existing[0]['id'] : $svc->createSet($name, 'Imported from the bundled ' . $file);
+                        $count = $svc->importMap('set', $setId, PronunciationService::decodeJsonMap((string) file_get_contents(APP_ROOT . '/resources/pronunciations/' . $file)));
+                        self::flash('success', "Imported $count rules into the series set \"$name\".");
+                        $back = ['layer' => 'set', 'ref' => $setId];
+                        break;
+                    case 'create_set':
+                        $setId = $svc->createSet((string) ($_POST['name'] ?? ''), (string) ($_POST['description'] ?? ''));
+                        self::flash('success', 'Series set created.');
+                        $back = ['layer' => 'set', 'ref' => $setId];
+                        break;
+                    case 'delete_set':
+                        if ((string) ($_POST['confirm'] ?? '') !== 'yes') throw new \InvalidArgumentException('Tick the box to confirm deleting the set.');
+                        $svc->deleteSet($ref);
+                        self::flash('success', 'Series set deleted.');
+                        $back = ['layer' => 'set', 'ref' => ''];
+                        break;
+                    case 'attach_set':
+                        $svc->attachSet($ref, (string) ($_POST['set_id'] ?? ''));
+                        self::flash('success', 'Series set linked to the project.');
+                        break;
+                    case 'detach_set':
+                        $svc->detachSet($ref, (string) ($_POST['set_id'] ?? ''));
+                        self::flash('success', 'Series set unlinked.');
+                        break;
+                    default:
+                        throw new \InvalidArgumentException('Unknown action.');
+                }
+            } catch (Throwable $error) {
+                self::flash('error', $error->getMessage());
+            }
+            self::redirect('pronunciation', $back);
+        }
+
+        $currentSet = $layer === 'set' && $ref !== '' ? $svc->set($ref) : null;
+        $testText = (string) ($_GET['test'] ?? '');
+        $testVoice = (string) ($_GET['test_voice'] ?? VoiceCatalog::DEFAULT_VOICE);
+        if (!KokoroClient::validVoice($testVoice)) $testVoice = VoiceCatalog::DEFAULT_VOICE;
+        $testProject = (string) ($_GET['test_project'] ?? '');
+        $testResult = null;
+        if ($testText !== '') {
+            $effective = $svc->effective($testProject !== '' ? $testProject : null, $testVoice);
+            $testResult = $svc->apply(mb_substr($testText, 0, 2000), $effective) + ['effective' => $effective];
+        }
+
+        self::view('pronunciation', [
+            'svc' => $svc, 'layers' => $layers, 'layer' => $layer, 'ref' => $ref, 'projects' => $projects, 'sets' => $sets,
+            'currentSet' => $currentSet, 'rules' => ($layer !== 'set' || $currentSet) && ($layer === 'default' || $ref !== '') ? $svc->rules($layer, $ref) : [],
+            'projectSets' => $layer === 'project' && $ref !== '' ? $svc->projectSets($ref) : [],
+            'voiceGroups' => VoiceCatalog::GROUPS, 'bundled' => PronunciationService::BUNDLED,
+            'testText' => $testText, 'testVoice' => $testVoice, 'testProject' => $testProject, 'testResult' => $testResult,
         ]);
     }
 
@@ -45,10 +147,19 @@ final class App
         if (!Csrf::validate(isset($payload['_token']) ? (string) $payload['_token'] : null)) { $fail(419, 'Security token expired. Reload the page.'); return; }
         $text = (string) ($payload['text'] ?? '');
         if (mb_strlen($text) > KokoroClient::MAX_PREVIEW_CHARS) { $fail(422, 'Preview text is limited to ' . KokoroClient::MAX_PREVIEW_CHARS . ' characters.'); return; }
+        $voice = (string) ($payload['voice'] ?? '');
+        if (!KokoroClient::validVoice($voice)) { $fail(422, 'That voice name is not valid.'); return; }
+        $spoken = $text;
+        if (!empty($payload['apply_pronunciation'])) {
+            $project = isset($payload['project_id']) && $payload['project_id'] !== '' ? (string) $payload['project_id'] : null;
+            if ($project !== null && !(new ProjectRepository())->find($project)) { $fail(404, 'Project not found.'); return; }
+            $service = new PronunciationService();
+            $spoken = $service->apply($text, $service->effective($project, $voice))['text'];
+        }
         // Do not hold the session lock while Kokoro is generating.
         session_write_close();
         try {
-            $wav = (new KokoroClient())->speech($text, (string) ($payload['voice'] ?? ''), (float) ($payload['speed'] ?? 1.0));
+            $wav = (new KokoroClient())->speech($spoken, $voice, (float) ($payload['speed'] ?? 1.0));
         } catch (\InvalidArgumentException $error) {
             $fail(422, $error->getMessage()); return;
         } catch (Throwable $error) {
@@ -59,6 +170,8 @@ final class App
         header('Content-Type: audio/wav');
         header('Content-Length: ' . strlen($wav));
         header('Cache-Control: no-store');
+        header('X-Spoken-Text: ' . rawurlencode(mb_substr($spoken, 0, 600)));
+        header('Access-Control-Expose-Headers: X-Spoken-Text');
         echo $wav;
     }
 

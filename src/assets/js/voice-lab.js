@@ -3,6 +3,7 @@
   const lab = document.querySelector('.voice-lab');
   if (!lab) return;
   const text = lab.querySelector('[data-lab-text]');
+  const pron = lab.querySelector('[data-lab-pron]');
   const count = lab.querySelector('[data-char-count]');
   const sample = text.value;
   const maxChars = Number(lab.dataset.maxChars) || 3000;
@@ -29,7 +30,10 @@
       const response = await fetch(lab.dataset.endpoint, {
         method: 'POST', credentials: 'same-origin',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({_token: lab.dataset.token, text: text.value, voice, speed})
+        body: JSON.stringify({
+          _token: lab.dataset.token, text: text.value, voice, speed,
+          apply_pronunciation: pron.value !== 'off', project_id: pron.value === 'off' ? '' : pron.value
+        })
       });
       if (!response.ok) {
         const failure = await response.json().catch(() => ({message: `Request failed (HTTP ${response.status}).`}));
@@ -45,6 +49,8 @@
       download.download = `voice-${voice.replace(/[^a-z0-9+_-]/gi, '')}-${speed.toFixed(2)}.wav`;
       download.hidden = false;
       status.textContent = `${voice} at ${speed.toFixed(2)}x, ${(blob.size / 1024).toFixed(0)} KB in ${((performance.now() - started) / 1000).toFixed(1)}s`;
+      const spoken = decodeURIComponent(response.headers.get('X-Spoken-Text') || '');
+      if (pron.value !== 'off' && spoken && spoken !== text.value) status.textContent += `. Spoken as: ${spoken.slice(0, 200)}${spoken.length > 200 ? '…' : ''}`;
       audio.play().catch(() => {});
     } catch (error) {
       status.textContent = error.message || 'Generation failed.';

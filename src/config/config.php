@@ -11,7 +11,7 @@ return [
     ],
     'database' => [
         'driver' => 'sqlite',
-        'path' => APP_ROOT . '/storage/app.sqlite',
+        'path' => getenv('AI_AUDIOBOOK_DB_PATH') ?: APP_ROOT . '/storage/app.sqlite',
     ],
     'paths' => [
         'ffmpeg' => getenv('FFMPEG_PATH') ?: '/usr/bin/ffmpeg',

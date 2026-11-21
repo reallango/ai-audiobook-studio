@@ -1,0 +1,259 @@
+<?php
+declare(strict_types=1);
+namespace App\Services;
+
+use App\Core\Database;
+use InvalidArgumentException;
+use PDO;
+
+/**
+ * Layered pronunciation overrides, applied to text before it is sent to Kokoro.
+ * Precedence, lowest to highest: default < voice < series set < project.
+ */
+final class PronunciationService
+{
+    public const LAYER_LABELS = ['default' => 'Default', 'voice' => 'Voice', 'set' => 'Series set', 'project' => 'Project'];
+
+    /** Bundled lists the UI can import as a series set (file name => set name). */
+    public const BUNDLED = ['sisko-original.json' => 'Star Trek DS9: Sisko (original list)'];
+
+    // ----- rules -----
+
+    /** @return array<int,array<string,mixed>> */
+    public function rules(string $scope, string $ref = ''): array
+    {
+        $this->assertLayer($scope, $ref);
+        $s = $this->db()->prepare('SELECT * FROM pronunciation_rules WHERE scope=:s AND scope_ref=:r ORDER BY pattern COLLATE NOCASE');
+        $s->execute(['s' => $scope, 'r' => $ref]);
+        return $s->fetchAll();
+    }
+
+    /** Adds a rule, or replaces the spoken form of an existing rule with the same pattern in that layer. */
+    public function save(string $scope, string $ref, string $pattern, string $replacement, bool $caseSensitive = false, bool $wholeWord = true, string $note = ''): void
+    {
+        $this->assertLayer($scope, $ref);
+        $pattern = trim($pattern);
+        $replacement = trim($replacement);
+        if ($pattern === '' || mb_strlen($pattern) > 100) throw new InvalidArgumentException('The written form must be 1 to 100 characters.');
+        // An empty spoken form is allowed: it removes the text from the narration (watermarks, page markers).
+        if (mb_strlen($replacement) > 200) throw new InvalidArgumentException('The spoken form is limited to 200 characters.');
+        if (mb_strlen($note) > 300) throw new InvalidArgumentException('The note is limited to 300 characters.');
+        $s = $this->db()->prepare(
+            'INSERT INTO pronunciation_rules(scope,scope_ref,pattern,replacement,case_sensitive,whole_word,note)
+             VALUES(:s,:r,:p,:rep,:cs,:ww,:n)
+             ON CONFLICT(scope,scope_ref,pattern) DO UPDATE SET replacement=excluded.replacement, case_sensitive=excluded.case_sensitive,
+               whole_word=excluded.whole_word, note=excluded.note, updated_at=CURRENT_TIMESTAMP'
+        );
+        $s->execute(['s' => $scope, 'r' => $ref, 'p' => $this->normalize($pattern), 'rep' => $replacement, 'cs' => (int) $caseSensitive, 'ww' => (int) $wholeWord, 'n' => $note]);
+    }
+
+    public function setEnabled(int $ruleId, bool $enabled): void
+    {
+        $this->db()->prepare('UPDATE pronunciation_rules SET enabled=:e, updated_at=CURRENT_TIMESTAMP WHERE id=:id')->execute(['e' => (int) $enabled, 'id' => $ruleId]);
+    }
+
+    public function delete(int $ruleId): void
+    {
+        $this->db()->prepare('DELETE FROM pronunciation_rules WHERE id=:id')->execute(['id' => $ruleId]);
+    }
+
+    /**
+     * Imports a JSON object {"written": "spoken", ...} into a layer. Returns the number of rules saved.
+     * @param array<string,mixed> $map
+     */
+    public function importMap(string $scope, string $ref, array $map): int
+    {
+        $this->assertLayer($scope, $ref);
+        $db = $this->db();
+        $db->beginTransaction();
+        try {
+            $n = 0;
+            foreach ($map as $written => $spoken) {
+                if (!is_string($spoken)) throw new InvalidArgumentException('Every value must be text: "' . mb_substr((string) $written, 0, 40) . '" is not.');
+                $this->save($scope, $ref, (string) $written, $spoken);
+                $n++;
+            }
+            $db->commit();
+            return $n;
+        } catch (\Throwable $e) {
+            if ($db->inTransaction()) $db->rollBack();
+            throw $e;
+        }
+    }
+
+    /** @return array<string,mixed> */
+    public static function decodeJsonMap(string $json): array
+    {
+        $data = json_decode($json, true);
+        if (!is_array($data) || ($data !== [] && array_is_list($data))) {
+            throw new InvalidArgumentException('Expected a JSON object like {"Bajor": "Bay-jor"}.');
+        }
+        if (count($data) > 5000) throw new InvalidArgumentException('That list has more than 5000 entries.');
+        return $data;
+    }
+
+    // ----- series sets -----
+
+    /** @return array<int,array<string,mixed>> */
+    public function sets(): array
+    {
+        return $this->db()->query(
+            'SELECT s.*, (SELECT COUNT(*) FROM pronunciation_rules r WHERE r.scope=\'set\' AND r.scope_ref=s.id) AS rule_count,
+                    (SELECT COUNT(*) FROM project_pronunciation_sets p WHERE p.set_id=s.id) AS project_count
+             FROM pronunciation_sets s ORDER BY s.name COLLATE NOCASE'
+        )->fetchAll();
+    }
+
+    /** @return array<string,mixed>|null */
+    public function set(string $id): ?array
+    {
+        $s = $this->db()->prepare('SELECT * FROM pronunciation_sets WHERE id=:id');
+        $s->execute(['id' => $id]);
+        return $s->fetch() ?: null;
+    }
+
+    public function createSet(string $name, string $description = ''): string
+    {
+        $name = trim($name);
+        if ($name === '' || mb_strlen($name) > 100) throw new InvalidArgumentException('A set name must be 1 to 100 characters.');
+        $id = self::uuid();
+        try {
+            $this->db()->prepare('INSERT INTO pronunciation_sets(id,name,description) VALUES(:id,:n,:d)')->execute(['id' => $id, 'n' => $name, 'd' => mb_substr(trim($description), 0, 300)]);
+        } catch (\PDOException $e) {
+            throw new InvalidArgumentException('A set with that name already exists.');
+        }
+        return $id;
+    }
+
+    public function deleteSet(string $id): void
+    {
+        $db = $this->db();
+        $db->beginTransaction();
+        $db->prepare("DELETE FROM pronunciation_rules WHERE scope='set' AND scope_ref=:id")->execute(['id' => $id]);
+        $db->prepare('DELETE FROM project_pronunciation_sets WHERE set_id=:id')->execute(['id' => $id]);
+        $db->prepare('DELETE FROM pronunciation_sets WHERE id=:id')->execute(['id' => $id]);
+        $db->commit();
+    }
+
+    /** @return array<int,array<string,mixed>> sets linked to a project, in override order (later wins) */
+    public function projectSets(string $projectId): array
+    {
+        $s = $this->db()->prepare('SELECT s.*, p.position FROM project_pronunciation_sets p JOIN pronunciation_sets s ON s.id=p.set_id WHERE p.project_id=:p ORDER BY p.position, s.name COLLATE NOCASE');
+        $s->execute(['p' => $projectId]);
+        return $s->fetchAll();
+    }
+
+    public function attachSet(string $projectId, string $setId): void
+    {
+        if (!$this->set($setId)) throw new InvalidArgumentException('That series set does not exist.');
+        $pos = (int) $this->db()->query("SELECT COALESCE(MAX(position),0)+1 FROM project_pronunciation_sets WHERE project_id=" . $this->db()->quote($projectId))->fetchColumn();
+        $this->db()->prepare('INSERT OR IGNORE INTO project_pronunciation_sets(project_id,set_id,position) VALUES(:p,:s,:pos)')->execute(['p' => $projectId, 's' => $setId, 'pos' => $pos]);
+    }
+
+    public function detachSet(string $projectId, string $setId): void
+    {
+        $this->db()->prepare('DELETE FROM project_pronunciation_sets WHERE project_id=:p AND set_id=:s')->execute(['p' => $projectId, 's' => $setId]);
+    }
+
+    // ----- resolving and applying -----
+
+    /**
+     * The rules in force for a voice and (optionally) a project, after layering.
+     * @return array<string,array<string,mixed>> keyed by lowercase pattern; each has layer and layer_label
+     */
+    public function effective(?string $projectId, ?string $voice): array
+    {
+        $layers = [['default', '', 'Default']];
+        if ($voice !== null && $voice !== '') $layers[] = ['voice', $voice, 'Voice ' . $voice];
+        if ($projectId !== null && $projectId !== '') {
+            foreach ($this->projectSets($projectId) as $set) $layers[] = ['set', (string) $set['id'], 'Set ' . $set['name']];
+            $layers[] = ['project', $projectId, 'Project'];
+        }
+        $effective = [];
+        foreach ($layers as [$scope, $ref, $label]) {
+            foreach ($this->rules($scope, $ref) as $rule) {
+                $key = mb_strtolower((string) $rule['pattern']);
+                if ((int) $rule['enabled'] !== 1) {
+                    unset($effective[$key]);        // a disabled rule switches off the same pattern from lower layers
+                    continue;
+                }
+                $effective[$key] = $rule + ['layer' => $scope, 'layer_label' => $label];
+            }
+        }
+        return $effective;
+    }
+
+    /**
+     * Rewrites text with the effective rules. Matching is one pass, longest pattern first, so a spoken form is never
+     * rewritten again. Curly apostrophes are treated as straight ones.
+     * @param array<string,array<string,mixed>> $effective
+     * @return array{text:string,hits:array<string,int>}
+     */
+    public function apply(string $text, array $effective): array
+    {
+        $text = str_replace(["\u{2019}", "\u{2018}"], "'", $text);
+        if ($effective === []) return ['text' => $text, 'hits' => []];
+        $rules = array_values($effective);
+        usort($rules, static fn (array $a, array $b): int => mb_strlen((string) $b['pattern']) <=> mb_strlen((string) $a['pattern']));
+
+        $parts = [];
+        $byKey = [];
+        foreach ($rules as $rule) {
+            $body = preg_quote((string) $rule['pattern'], '/');
+            if ((int) $rule['case_sensitive'] !== 1) $body = '(?i:' . $body . ')';
+            if ((int) $rule['whole_word'] === 1) $body = '(?<![\p{L}\p{N}_\'])' . $body . '(?![\p{L}\p{N}_\'])';
+            $parts[] = $body;
+            $byKey[mb_strtolower((string) $rule['pattern'])] = $rule;
+        }
+        $hits = [];
+        $out = preg_replace_callback('/' . implode('|', $parts) . '/u', static function (array $m) use ($byKey, &$hits): string {
+            $rule = $byKey[mb_strtolower($m[0])] ?? null;
+            if ($rule === null) return $m[0];
+            $hits[$rule['pattern']] = ($hits[$rule['pattern']] ?? 0) + 1;
+            return (string) $rule['replacement'];
+        }, $text);
+        return ['text' => $out ?? $text, 'hits' => $hits];
+    }
+
+    // ----- internals -----
+
+    private function assertLayer(string $scope, string $ref): void
+    {
+        switch ($scope) {
+            case 'default':
+                if ($ref !== '') throw new InvalidArgumentException('The default layer has no reference.');
+                return;
+            case 'voice':
+                if (!KokoroClient::validVoice($ref)) throw new InvalidArgumentException('That voice name is not valid.');
+                return;
+            case 'set':
+                if (!$this->set($ref)) throw new InvalidArgumentException('That series set does not exist.');
+                return;
+            case 'project':
+                $s = $this->db()->prepare('SELECT 1 FROM projects WHERE id=:id');
+                $s->execute(['id' => $ref]);
+                if (!$s->fetchColumn()) throw new InvalidArgumentException('That project does not exist.');
+                return;
+            default:
+                throw new InvalidArgumentException('Unknown pronunciation layer.');
+        }
+    }
+
+    private function normalize(string $pattern): string
+    {
+        return str_replace(["\u{2019}", "\u{2018}"], "'", $pattern);
+    }
+
+    private function db(): PDO
+    {
+        return Database::connection();
+    }
+
+    private static function uuid(): string
+    {
+        $d = random_bytes(16);
+        $d[6] = chr((ord($d[6]) & 15) | 64);
+        $d[8] = chr((ord($d[8]) & 63) | 128);
+        return vsprintf('%s%s-%s-%s-%s-%s%s%s', str_split(bin2hex($d), 4));
+    }
+}

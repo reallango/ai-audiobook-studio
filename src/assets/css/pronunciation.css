@@ -1,0 +1,31 @@
+.pron-tabs { display: flex; gap: .5rem; flex-wrap: wrap; margin: 0 0 1rem; }
+.pron-tabs a { padding: .45rem .9rem; border: 1px solid rgba(127, 127, 127, .4); border-radius: 999px; text-decoration: none; color: inherit; }
+.pron-tabs a.active { background: rgba(80, 120, 220, .18); border-color: rgba(80, 120, 220, .7); font-weight: 600; }
+.pron-panel { margin-bottom: 1.5rem; }
+.pron-panel input, .pron-panel select, .pron-panel textarea { font: inherit; box-sizing: border-box; }
+.pron-panel textarea { width: 100%; padding: .6rem .75rem; }
+.pron-explain, .pron-note, .pron-empty { opacity: .8; margin: .25rem 0 1rem; }
+.pron-h2 { margin: 1.25rem 0 .75rem; font-size: 1.15rem; }
+.pron-h2 small { opacity: .6; font-weight: normal; }
+.pron-picker { display: flex; gap: 1rem; flex-wrap: wrap; align-items: end; margin-bottom: 1rem; }
+.pron-picker label, .pron-inline label, .pron-add label, .pron-test label { display: grid; gap: .25rem; }
+.pron-inline { display: flex; gap: .75rem; align-items: end; flex-wrap: wrap; }
+.pron-linked ul { margin: .25rem 0; padding-left: 1.2rem; }
+.pron-linked li { display: flex; gap: .75rem; align-items: center; }
+.pron-add { display: flex; gap: .75rem; align-items: end; flex-wrap: wrap; margin-bottom: 1rem; }
+.pron-add label.check, .pron-panel label.check { display: flex; gap: .35rem; align-items: center; }
+.pron-table { width: 100%; border-collapse: collapse; font-size: .95rem; }
+.pron-table th, .pron-table td { text-align: left; padding: .45rem .6rem; border-bottom: 1px solid rgba(127, 127, 127, .25); vertical-align: top; }
+.pron-table tr.off td { opacity: .45; }
+.pron-actions { white-space: nowrap; }
+.pron-actions form { display: inline; }
+.link-button { background: none; border: 0; padding: 0 .4rem; color: inherit; text-decoration: underline; cursor: pointer; font: inherit; }
+.link-button.danger, button.danger { color: #c0392b; }
+.pron-import { margin-top: 1.25rem; }
+.pron-import summary { cursor: pointer; }
+.pron-test-row { display: flex; gap: .75rem; align-items: end; flex-wrap: wrap; margin: .75rem 0; }
+.pron-test audio { width: 100%; margin-top: .5rem; }
+.pron-status { min-height: 1.2em; opacity: .85; margin: .25rem 0 0; }
+.pron-result { margin-top: 1rem; }
+.pron-result h3 { margin: .75rem 0 .25rem; font-size: 1rem; }
+.pron-spoken { padding: .6rem .75rem; border: 1px solid rgba(127, 127, 127, .35); border-radius: 8px; white-space: pre-wrap; }

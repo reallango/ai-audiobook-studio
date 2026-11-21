@@ -42,6 +42,13 @@ $renderVoiceOptions = static function (array $groups, string $selected): string 
     <button type="button" class="button secondary" data-use-sample>Use sample passage</button>
     <span data-char-count></span>
   </div>
+  <label>Pronunciation rules
+    <select data-lab-pron>
+      <option value="off">Off, send the text as typed</option>
+      <option value="">On: default and voice layers only</option>
+      <?php foreach ($projects as $p): ?><option value="<?= e($p['id']) ?>">On, with project: <?= e($p['title']) ?></option><?php endforeach; ?>
+    </select>
+  </label>
 
   <div class="lab-takes">
     <?php foreach (['A' => $defaultVoice, 'B' => 'bm_lewis'] as $slot => $voice): ?>
