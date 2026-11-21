@@ -1,4 +1,7 @@
-# AI Audiobook Studio: plan of action (v2, nothing coded yet)
+# AI Audiobook Studio: plan of action (v3)
+
+**Status (2026-11-21):** M0 to M5 are built, tested and deployed on AI-Laptop (version 0.0.1). Next: M6 (granular regeneration, partly present already: per-segment redo, reuse of unchanged segments, stale-audio flag), then M7 (series sets are done; whole-book generation, bulk download, polish).
+Learned on the way: the backup never created the first chapter list (fixed); scene breaks such as "* * *" must be pauses, not segments; Kokoro generates about 3 segments per second, so a 44 minute chapter takes under a minute.
 
 Goal: one Docker container, all PHP, hosting the web app at `/AI-Audiobook/`. It turns EPUBs into audiobooks through Kokoro (on AI-Laptop), one WAV per chapter. M4B and chapteriser are out of scope for now. The old Python test scripts stay out of the repo, because they contain a plain-text API key.
 
