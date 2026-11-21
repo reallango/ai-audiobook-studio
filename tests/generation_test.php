@@ -127,6 +127,30 @@ $narr->unapprove('p', 'L');
 check('an unapproved chapter has no audio state', $gen->summaries('p', $narr->overview('p'))['L']['state'], 'n/a');
 $narr->approve('p', 'L');
 
+// per-chapter voice and speed
+use App\Services\ChapterSettings;
+use App\Services\PronunciationService;
+(new PronunciationService())->save('voice', 'af_bella', 'Paragraph', 'Para-graf');
+check('no override at first', ChapterSettings::get('L'), ['voice' => null, 'speed' => null]);
+ChapterSettings::set('p', 'L', 'af_bella', 0.9);
+$st = $gen->status('p', 'L');
+check('the chapter override wins over the project', [$st['voice'], $st['speed']], ['af_bella', 0.9]);
+check("and selects that voice's pronunciation rules", [str_contains($narr->chapter('p', 'L')['text'], 'Para-graf'), $narr->chapter('p', 'L')['voice']], [true, 'af_bella']);
+$narr->approve('p', 'L');
+$gen->prepare('p', 'L');
+$st = $gen->status('p', 'L');
+check('segments are made for the chapter voice and speed', [$st['segments'][0]['voice'], (float) $st['segments'][0]['speed'], $st['needs_prepare']], ['af_bella', 0.9, false]);
+$sum = $gen->summaries('p', $narr->overview('p'));
+check('the chapter list knows it is custom', [$sum['L']['custom'], $sum['L']['voice'], $sum['L']['speed']], [true, 'af_bella', 0.9]);
+check('a bad voice is refused', expectError(fn () => ChapterSettings::set('p', 'L', 'Bad Voice!', null)), 'rejected');
+check('a bad speed is refused', expectError(fn () => ChapterSettings::set('p', 'L', null, 9.0)), 'rejected');
+check('another project cannot set it', expectError(fn () => ChapterSettings::set('other', 'L', 'af_bella', null)), 'rejected');
+ChapterSettings::set('p', 'L', null, null);
+check('clearing goes back to the project', [ChapterSettings::get('L'), $gen->status('p', 'L')['voice'], $gen->status('p', 'L')['speed']], [['voice' => null, 'speed' => null], 'bm_lewis', 1.0]);
+check('the text changed with the voice, so it needs approving again', $gen->status('p', 'L')['narration_status'], 'changed');
+$narr->approve('p', 'L');
+check('and then the segments are out of date', $gen->status('p', 'L')['needs_prepare'], true);
+
 // foreign chapter
 check('chapter must belong to the project', expectError(fn () => $gen->generateNext('p', 'nope')), 'rejected');
 

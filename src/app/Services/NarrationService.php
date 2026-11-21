@@ -45,7 +45,8 @@ final class NarrationService
     {
         $project = $this->project($projectId);
         $section = $this->section($projectId, $logicalId);
-        $voice = (string) ($project['active_voice_profile_id'] ?: VoiceCatalog::DEFAULT_VOICE);
+        // a chapter's own voice also selects the voice-layer pronunciation rules
+        $voice = ChapterSettings::get($logicalId)['voice'] ?? (string) ($project['active_voice_profile_id'] ?: VoiceCatalog::DEFAULT_VOICE);
 
         $pron = new PronunciationService();
         $effective = $pron->effective($projectId, $voice);

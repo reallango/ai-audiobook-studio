@@ -32,7 +32,7 @@ final class GenerationService
      */
     public function prepare(string $projectId, string $logicalId): array
     {
-        [$project, $voice, $speed] = $this->settings($projectId);
+        [$project, $voice, $speed] = $this->settings($projectId, $logicalId);
         $chapter = (new NarrationService())->chapter($projectId, $logicalId);
         if ($chapter['status'] !== 'approved') throw new InvalidArgumentException('Approve the chapter before generating audio.');
         $wanted = Segmenter::split($chapter['text'], (int) config('tts.segment_max_chars', Segmenter::DEFAULT_MAX_CHARS));
@@ -146,7 +146,8 @@ final class GenerationService
      */
     public function summaries(string $projectId, array $overview): array
     {
-        [, $voice, $speed] = $this->settings($projectId);
+        [, $projectVoice, $projectSpeed] = $this->settings($projectId);
+        $overrides = ChapterSettings::forProject($projectId);
         $db = $this->db();
         $ids = array_column($overview, 'id');
         $segments = [];
@@ -165,10 +166,12 @@ final class GenerationService
         $out = [];
         foreach ($overview as $row) {
             $id = (string) $row['id'];
+            $voice = $overrides[$id]['voice'] ?? $projectVoice;
+            $speed = $overrides[$id]['speed'] ?? $projectSpeed;
             $rows = $segments[$id] ?? [];
             $done = count(array_filter($rows, static fn (array $r): bool => $r['status'] === 'DONE'));
             $job = $jobs[$id] ?? null;
-            $info = ['state' => 'n/a', 'done' => $done, 'total' => count($rows), 'duration_ms' => isset($audio[$id]) ? (int) $audio[$id]['duration_ms'] : null];
+            $info = ['state' => 'n/a', 'voice' => $voice, 'speed' => $speed, 'custom' => isset($overrides[$id]), 'done' => $done, 'total' => count($rows), 'duration_ms' => isset($audio[$id]) ? (int) $audio[$id]['duration_ms'] : null];
             if ($row['status'] === 'approved') {
                 $wanted = array_map(static fn (array $w): string => hash('sha256', $w['text']), Segmenter::split((string) $row['text'], (int) config('tts.segment_max_chars', Segmenter::DEFAULT_MAX_CHARS)));
                 $have = array_map(static fn (array $r): string => (string) $r['text_sha256'], $rows);
@@ -219,7 +222,7 @@ final class GenerationService
      */
     public function status(string $projectId, string $logicalId): array
     {
-        [$project, $voice, $speed] = $this->settings($projectId);
+        [$project, $voice, $speed] = $this->settings($projectId, $logicalId);
         $chapter = (new NarrationService())->chapter($projectId, $logicalId);
         $rows = $this->segments($logicalId);
 
@@ -291,15 +294,16 @@ final class GenerationService
     }
 
     /** @return array{0:array<string,mixed>,1:string,2:float} */
-    private function settings(string $projectId): array
+    private function settings(string $projectId, ?string $logicalId = null): array
     {
         $s = $this->db()->prepare('SELECT * FROM projects WHERE id=:id');
         $s->execute(['id' => $projectId]);
         $project = $s->fetch() ?: throw new InvalidArgumentException('Project not found.');
         if ($project['status'] === 'ARCHIVED') throw new InvalidArgumentException('Restore the project before generating audio.');
-        $voice = (string) ($project['active_voice_profile_id'] ?: VoiceCatalog::DEFAULT_VOICE);
+        $own = $logicalId !== null ? ChapterSettings::get($logicalId) : ['voice' => null, 'speed' => null];
+        $voice = $own['voice'] ?? (string) ($project['active_voice_profile_id'] ?: VoiceCatalog::DEFAULT_VOICE);
         if (!KokoroClient::validVoice($voice)) throw new InvalidArgumentException('The project voice is not valid.');
-        return [$project, $voice, (float) ($project['tts_speed'] ?? 1.0)];
+        return [$project, $voice, $own['speed'] ?? (float) ($project['tts_speed'] ?? 1.0)];
     }
 
     private function assertChapter(string $projectId, string $logicalId): void

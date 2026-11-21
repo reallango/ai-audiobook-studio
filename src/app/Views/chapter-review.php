@@ -51,6 +51,15 @@ $audioUrl = static fn (string $kind, string $ref, array $extra = []): string => 
          data-job-active="<?= $job && in_array($job['status'], ['QUEUED', 'RUNNING'], true) ? '1' : '0' ?>"
          data-worker-online="<?= $workerOnline ? '1' : '0' ?>">
   <h2>Audio</h2>
+  <?php if (!$archived): $own = \App\Services\ChapterSettings::get((string) $section['id']); $pv = (string) ($project['active_voice_profile_id'] ?: \App\Services\VoiceCatalog::DEFAULT_VOICE); ?>
+    <form class="chapter-voice" data-chapter-voice>
+      <label>Voice for this chapter <input name="voice" list="kokoro-voices-ch" value="<?= e((string) ($own['voice'] ?? '')) ?>" placeholder="project: <?= e($pv) ?>" maxlength="100"></label>
+      <label>Speed <input name="speed" type="number" min="0.5" max="2" step="0.05" value="<?= $own['speed'] !== null ? e(number_format($own['speed'], 2, '.', '')) : '' ?>" placeholder="project: <?= e(number_format((float) ($project['tts_speed'] ?? 1.0), 2)) ?>"></label>
+      <button type="submit" class="button secondary">Save</button>
+      <small>Leave empty to use the project's voice and speed. A change makes this chapter's audio be generated again.</small>
+      <datalist id="kokoro-voices-ch"><?php foreach (\App\Services\VoiceCatalog::all() as $voiceName): ?><option value="<?= e($voiceName) ?>"><?php endforeach; ?></datalist>
+    </form>
+  <?php endif; ?>
   <?php if (!$audio['approved']): ?>
     <p class="muted">Approve the chapter first. Audio is made from the approved text, so it can be reviewed before any generation time is spent.
       Voice <code><?= e($audio['voice']) ?></code> at <?= e(number_format($audio['speed'], 2)) ?>x (change it in the project settings).</p>
@@ -113,7 +122,7 @@ $audioUrl = static fn (string $kind, string $ref, array $extra = []): string => 
 <aside class="review-side">
 <section class="workbench" data-workbench
          data-preview="<?= e(base_url('voice-preview')) ?>" data-rule="<?= e(base_url('pronunciation-rule')) ?>" data-token="<?= e($audioToken) ?>"
-         data-project="<?= e((string) $project['id']) ?>" data-voice="<?= e($chapter['voice']) ?>" data-speed="<?= e(number_format((float) ($project['tts_speed'] ?? 1.0), 2, '.', '')) ?>">
+         data-project="<?= e((string) $project['id']) ?>" data-voice="<?= e($chapter['voice']) ?>" data-speed="<?= e(number_format((float) ($audio['speed'] ?? $project['tts_speed'] ?? 1.0), 2, '.', '')) ?>">
   <h2>Try a pronunciation</h2>
   <p class="muted">Pick "try this" on a paragraph below, or select a word in the original text. Type how it should sound, listen with this project's voice and rules, then save it as a rule. Nothing changes until you save.</p>
   <label>Text to hear <textarea data-wb-text rows="3" maxlength="3000" placeholder="Choose a paragraph below, or type here"></textarea></label>

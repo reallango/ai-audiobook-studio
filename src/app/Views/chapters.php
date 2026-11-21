@@ -51,7 +51,7 @@ $totalMs = array_sum(array_map(static fn (array $a): int => (int) ($a['duration_
     <?php foreach ($rows as $r): $a = $audio[$r['id']] ?? ['state' => 'n/a', 'done' => 0, 'total' => 0, 'duration_ms' => null]; ?>
       <tr>
         <td><?= str_pad((string) $r['position'], 3, '0', STR_PAD_LEFT) ?></td>
-        <td><a href="<?= e(base_url('chapter-review', ['id' => $project['id'], 'section' => $r['id']])) ?>"><?= e($r['title']) ?></a></td>
+        <td><a href="<?= e(base_url('chapter-review', ['id' => $project['id'], 'section' => $r['id']])) ?>"><?= e($r['title']) ?></a><?php if (!empty($a['custom'])): ?> <small class="custom-voice" title="This chapter has its own voice or speed"><?= e((string) $a['voice']) ?> <?= e(number_format((float) $a['speed'], 2)) ?>x</small><?php endif; ?></td>
         <td class="right"><?= number_format((int) $r['words']) ?></td>
         <td class="right"><?= $r['edited'] ? (int) $r['edited'] : '' ?></td>
         <td><span class="chapter-status <?= e($r['status']) ?>"><?= e($labels[$r['status']]) ?></span></td>

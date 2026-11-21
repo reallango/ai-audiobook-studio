@@ -13,6 +13,7 @@ use App\Services\PronunciationService;
 use App\Services\NarrationService;
 use App\Services\GenerationService;
 use App\Services\JobService;
+use App\Services\ChapterSettings;
 use Throwable;
 final class App
 {
@@ -346,6 +347,12 @@ final class App
                 case 'job':
                     $job = (new JobService())->forChapter($sectionId);
                     self::json(['ok' => true, 'job' => $job, 'counts' => $gen->status($projectId, $sectionId)['counts'], 'worker_online' => JobService::workerOnline()]);
+                    return;
+                case 'chapter_settings':
+                    $voice = isset($p['voice']) ? trim((string) $p['voice']) : '';
+                    $speed = isset($p['speed']) && $p['speed'] !== '' && $p['speed'] !== null ? (float) $p['speed'] : null;
+                    ChapterSettings::set($projectId, $sectionId, $voice === '' ? null : $voice, $speed);
+                    self::json(['ok' => true]);
                     return;
                 case 'reset_all':
                     self::json(['ok' => true, 'reset' => $gen->resetAll($projectId, $sectionId)]);

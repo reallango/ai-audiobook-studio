@@ -72,6 +72,20 @@
     watch();
   }
 
+  const voiceForm = panel.querySelector('[data-chapter-voice]');
+  if (voiceForm) voiceForm.addEventListener('submit', async event => {
+    event.preventDefault();
+    const button = voiceForm.querySelector('button');
+    button.disabled = true;
+    try {
+      await call('chapter_settings', {voice: voiceForm.elements.voice.value.trim(), speed: voiceForm.elements.speed.value});
+      location.reload();
+    } catch (error) {
+      status.textContent = error.message;
+      button.disabled = false;
+    }
+  });
+
   generate.addEventListener('click', () => start());
   if (retry) retry.addEventListener('click', () => start(() => call('reset', {segment_id: ''})));
   const regenerate = panel.querySelector('[data-regenerate]');
