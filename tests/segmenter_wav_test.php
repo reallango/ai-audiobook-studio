@@ -42,6 +42,10 @@ $noPunct = implode(' ', array_fill(0, 80, 'word'));
 $s = Segmenter::split($noPunct, 100);
 check('hard split only as a last resort, at spaces', [count($s) > 1, max(array_map(static fn (array $x): int => mb_strlen($x['text']), $s)) <= 100, implode(' ', array_column($s, 'text')) === $noPunct], [true, true, true]);
 check('empty text gives no segments', Segmenter::split("  \n\n "), []);
+$s = Segmenter::split("First scene ends here.\n\n* * *\n\nSecond scene begins.\n\n***\n\n— — —\n\n");
+check('scene breaks are not segments but lengthen the pause before them', [array_column($s, 'text'), array_column($s, 'gap_ms')], [['First scene ends here.', 'Second scene begins.'], [Segmenter::GAP_SCENE_MS, Segmenter::GAP_SCENE_MS]]);
+check('a leading ornament is ignored', array_column(Segmenter::split("* * *\n\nText."), 'text'), ['Text.']);
+check('digits alone are speakable', array_column(Segmenter::split('1984'), 'text'), ['1984']);
 
 // ----- wav -----
 function makeWav(string $path, array $samples, bool $streamedHeader = false): void

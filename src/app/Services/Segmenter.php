@@ -11,6 +11,7 @@ final class Segmenter
     public const DEFAULT_MAX_CHARS = 900;
     public const GAP_PARAGRAPH_MS = 800;
     public const GAP_SENTENCE_MS = 250;
+    public const GAP_SCENE_MS = 1800;
 
     private const ABBREVIATIONS = [
         'mr', 'mrs', 'ms', 'dr', 'st', 'jr', 'sr', 'prof', 'vs', 'etc', 'gen', 'col', 'capt', 'lt', 'cmdr', 'adm', 'maj', 'sgt',
@@ -25,6 +26,11 @@ final class Segmenter
         foreach (preg_split('/\n\s*\n/u', trim($text)) ?: [] as $paragraph) {
             $paragraph = trim((string) preg_replace('/\s+/u', ' ', $paragraph));
             if ($paragraph === '') continue;
+            // Nothing to say ("* * *", "---", ornaments): Kokoro rejects it, so it becomes a longer pause after the previous text.
+            if (!preg_match('/[\p{L}\p{N}]/u', $paragraph)) {
+                if ($segments !== []) $segments[array_key_last($segments)]['gap_ms'] = self::GAP_SCENE_MS;
+                continue;
+            }
             $pieces = mb_strlen($paragraph) <= $maxChars ? [$paragraph] : self::pack(self::sentences($paragraph), $maxChars);
             foreach ($pieces as $i => $piece) {
                 $segments[] = ['text' => $piece, 'gap_ms' => $i === array_key_last($pieces) ? self::GAP_PARAGRAPH_MS : self::GAP_SENTENCE_MS];
