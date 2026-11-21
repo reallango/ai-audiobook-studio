@@ -22,7 +22,7 @@ if ($sourceAnalyzed) {
     $includedCount = (int) ($logicalSummary['included'] ?? 0);
 }
 
-$basePath = rtrim((string) config('app.base_path', '/AI-Audiobook'), '/');
+$basePath = rtrim((string) config('app.base_path', ''), '/');
 $logicalUrl = $basePath . '/logical_sections.php?project=' . rawurlencode($project['id']);
 $settingsEndpoint = $basePath . '/project_settings.php';
 $providerValue = (string) ($project['active_provider_profile_id'] ?: 'kokoro');

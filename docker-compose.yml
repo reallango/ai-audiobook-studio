@@ -11,7 +11,7 @@ services:
       KOKORO_URL: ${KOKORO_URL:-http://192.168.1.130:8880}
       KOKORO_API_KEY: ${KOKORO_API_KEY:-}
     volumes:
-      - audiobook-storage:/app/AI-Audiobook/storage
+      - audiobook-storage:/app/storage
 
 volumes:
   audiobook-storage:

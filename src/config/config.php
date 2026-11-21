@@ -4,7 +4,8 @@ declare(strict_types=1);
 return [
     'app' => [
         'name' => 'AI Audiobook Studio',
-        'base_path' => getenv('AI_AUDIOBOOK_BASE_PATH') ?: '/AI-Audiobook',
+        // Empty means served at the web root. Set e.g. /AI-Audiobook to serve from a subfolder.
+        'base_path' => rtrim((string) (getenv('AI_AUDIOBOOK_BASE_PATH') ?: ''), '/'),
         'environment' => getenv('AI_AUDIOBOOK_ENV') ?: 'production',
         'debug' => filter_var(getenv('AI_AUDIOBOOK_DEBUG') ?: 'false', FILTER_VALIDATE_BOOL),
     ],

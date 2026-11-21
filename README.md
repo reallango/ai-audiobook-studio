@@ -11,7 +11,7 @@ cp .env.example .env     # set KOKORO_URL and KOKORO_API_KEY
 docker compose up -d --build
 ```
 
-Open `http://<host>:8085/AI-Audiobook/`. Data lives in the `audiobook-storage` volume.
+Open `http://<host>:8085/`. Data lives in the `audiobook-storage` volume.
 
 ## Notes
 - Kokoro itself runs separately (GPU recommended). This app only calls its OpenAI-compatible `/v1/audio/speech` endpoint.

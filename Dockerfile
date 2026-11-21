@@ -11,12 +11,10 @@ ENV WEB_DOCUMENT_ROOT=/app \
     PHP_MAX_EXECUTION_TIME=900 \
     SERVICE_NGINX_CLIENT_MAX_BODY_SIZE=512M
 
-COPY src/ /app/AI-Audiobook/
-COPY docker/root-index.php /app/index.php
+COPY src/ /app/
 
-RUN mkdir -p /app/AI-Audiobook/storage/projects /app/AI-Audiobook/storage/cache \
-             /app/AI-Audiobook/storage/logs /app/AI-Audiobook/storage/tmp \
-             /app/AI-Audiobook/storage/backups /app/AI-Audiobook/storage/locks \
+RUN mkdir -p /app/storage/projects /app/storage/cache /app/storage/logs \
+             /app/storage/tmp /app/storage/backups /app/storage/locks \
  && chown -R application:application /app
 
-VOLUME /app/AI-Audiobook/storage
+VOLUME /app/storage

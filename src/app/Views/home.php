@@ -19,7 +19,7 @@ $health = \App\Core\App::health();
   <section class="hero">
     <p class="eyebrow">PROJECT-BASED AUDIOBOOK AUTHORING</p>
     <h1>Your audiobook workspace is ready.</h1>
-    <p class="lead">The Phase 0 application shell is running from the <strong>/AI-Audiobook</strong> subfolder. Project creation, EPUB import, rule processing, review tools, and section audio generation will be added as isolated milestones.</p>
+    <p class="lead">Project creation, EPUB import, rule processing, review tools, and section audio generation will be added as isolated milestones.</p>
     <div class="actions">
       <button type="button" disabled>Create project <small>Phase 1</small></button>
       <a class="button secondary" href="<?= e(base_url('diagnostics')) ?>">Run diagnostics</a>
