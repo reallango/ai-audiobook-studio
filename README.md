@@ -2,7 +2,7 @@
 
 A single-container web app that turns EPUB books into audiobooks using a Kokoro TTS server. It keeps books as projects: import, review chapters, set voice and pronunciation, generate, and regenerate only what changed.
 
-Status: 0.0.1. Done: baseline container, Voice Lab, layered pronunciation, chapter review and approval, segmenting and chapter audio generation (WAV). See `PLAN.md`.
+Status: 0.0.1. Done: baseline container, Voice Lab, layered pronunciation, chapter review and approval, segmenting, chapter audio generation (WAV) and a resumable background worker. See `PLAN.md`.
 
 ## Run
 

@@ -12,6 +12,7 @@ use App\Services\VoiceCatalog;
 use App\Services\PronunciationService;
 use App\Services\NarrationService;
 use App\Services\GenerationService;
+use App\Services\JobService;
 use Throwable;
 final class App
 {
@@ -240,7 +241,7 @@ final class App
         }
         self::view('chapter-review', [
             'project' => $project, 'chapter' => $chapter, 'focus' => (string) ($_GET['b'] ?? ''), 'audio' => $audio,
-            'audioToken' => Csrf::token(),
+            'audioToken' => Csrf::token(), 'job' => (new JobService())->forChapter($sectionId), 'workerOnline' => JobService::workerOnline(),
             'prevId' => $at !== false && $at > 0 ? $order[$at - 1] : null,
             'nextId' => $at !== false && $at < count($order) - 1 ? $order[$at + 1] : null,
         ]);
@@ -270,6 +271,19 @@ final class App
                     return;
                 case 'assemble':
                     self::json(['ok' => true] + $gen->assemble($projectId, $sectionId));
+                    return;
+                case 'enqueue':
+                    $jobs = new JobService();
+                    $job = $jobs->enqueue($projectId, $sectionId);
+                    self::json(['ok' => true, 'job' => $job, 'worker_online' => JobService::workerOnline()]);
+                    return;
+                case 'cancel':
+                    (new JobService())->cancel($projectId, $sectionId);
+                    self::json(['ok' => true]);
+                    return;
+                case 'job':
+                    $job = (new JobService())->forChapter($sectionId);
+                    self::json(['ok' => true, 'job' => $job, 'counts' => $gen->status($projectId, $sectionId)['counts'], 'worker_online' => JobService::workerOnline()]);
                     return;
                 case 'reset':
                     $segment = isset($p['segment_id']) && $p['segment_id'] !== '' ? (string) $p['segment_id'] : null;

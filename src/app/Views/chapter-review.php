@@ -52,7 +52,8 @@ $audioUrl = static fn (string $kind, string $ref, array $extra = []): string => 
 <section class="audio-panel" data-audio-panel
          data-endpoint="<?= e(base_url('chapter-audio')) ?>" data-token="<?= e($audioToken) ?>"
          data-project="<?= e((string) $project['id']) ?>" data-section="<?= e((string) $section['id']) ?>"
-         data-needs-prepare="<?= $audio['needs_prepare'] || !$audio['prepared'] ? '1' : '0' ?>">
+         data-job-active="<?= $job && in_array($job['status'], ['QUEUED', 'RUNNING'], true) ? '1' : '0' ?>"
+         data-worker-online="<?= $workerOnline ? '1' : '0' ?>">
   <h2>Audio</h2>
   <?php if (!$audio['approved']): ?>
     <p class="muted">Approve the chapter first. Audio is made from the approved text, so it can be reviewed before any generation time is spent.
@@ -67,10 +68,14 @@ $audioUrl = static fn (string $kind, string $ref, array $extra = []): string => 
     <div class="audio-actions">
       <button type="button" data-generate><?= !$audio['prepared'] ? 'Generate audio' : ($audio['ready_to_assemble'] && !$audio['needs_prepare'] ? ($audio['chapter_audio'] && !$audio['audio_stale'] ? 'Rebuild chapter audio' : 'Build chapter audio') : 'Generate audio') ?></button>
       <?php if ($counts['failed'] > 0): ?><button type="button" class="button secondary" data-retry>Retry failed segments</button><?php endif; ?>
-      <button type="button" class="button secondary" data-stop hidden>Stop after this segment</button>
+      <button type="button" class="button secondary" data-stop hidden>Cancel</button>
     </div>
     <div class="audio-progress" hidden><div data-bar></div></div>
-    <p class="audio-status" data-audio-status aria-live="polite"></p>
+    <p class="audio-status" data-audio-status aria-live="polite"><?php
+        if ($job && $job['status'] === 'FAILED') echo 'Last run failed: ' . e((string) $job['message']);
+        elseif ($job && $job['status'] === 'CANCELLED') echo 'Last run was cancelled.';
+    ?></p>
+    <?php if (!$workerOnline): ?><p class="muted">The background worker has not been seen recently, so a started job will wait until it is running.</p><?php endif; ?>
 
     <?php if ($audio['chapter_audio']): $ca = $audio['chapter_audio']; ?>
       <div class="audio-chapter">
