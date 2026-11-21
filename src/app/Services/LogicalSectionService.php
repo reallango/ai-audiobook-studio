@@ -15,5 +15,68 @@ final class LogicalSectionService
  private function formatTitle(string$t,string$n,string$c):string{if(preg_match('/^chapter\s+([0-9]+|[a-z -]+)$/iu',$t,$m)){$num=$m[1];if($n==='digits'&&!ctype_digit($num))$num=(string)($this->wordNumber($num)??$num);elseif($n==='words'&&ctype_digit($num))$num=$this->numberWord((int)$num);$t='Chapter '.$num;}if($c==='upper')$t=mb_strtoupper($t);elseif($c==='title')$t=mb_convert_case(mb_strtolower($t),MB_CASE_TITLE,'UTF-8');return$t;}
  private function numberWord(int$n):string{$ones=['zero','one','two','three','four','five','six','seven','eight','nine','ten','eleven','twelve','thirteen','fourteen','fifteen','sixteen','seventeen','eighteen','nineteen'];$tens=[2=>'twenty',3=>'thirty',4=>'forty',5=>'fifty',6=>'sixty',7=>'seventy',8=>'eighty',9=>'ninety'];if($n<20)return$ones[$n]??(string)$n;if($n<100)return$tens[intdiv($n,10)].($n%10?' '.$ones[$n%10]:'');return(string)$n;}
  private function wordNumber(string$w):?int{$map=['one'=>1,'two'=>2,'three'=>3,'four'=>4,'five'=>5,'six'=>6,'seven'=>7,'eight'=>8,'nine'=>9,'ten'=>10,'eleven'=>11,'twelve'=>12,'thirteen'=>13,'fourteen'=>14,'fifteen'=>15,'sixteen'=>16,'seventeen'=>17,'eighteen'=>18,'nineteen'=>19,'twenty'=>20,'thirty'=>30,'forty'=>40,'fifty'=>50,'sixty'=>60,'seventy'=>70,'eighty'=>80,'ninety'=>90];$parts=preg_split('/[ -]+/',mb_strtolower(trim($w)));$sum=0;foreach($parts as$p){if(!isset($map[$p]))return null;$sum+=$map[$p];}return$sum?:null;}
- private function uuid():string{$d=random_bytes(16);$d[6]=chr((ord($d[6])&15)|64);$d[8]=chr((ord($d[8])&63)|128);return vsprintf('%s%s-%s-%s-%s-%s%s%s',str_split(bin2hex($d),4));}
+ /**
+     * Builds the first logical sections from the analyzed spine: one per source section, except that consecutive
+     * "chapter_N" files of the same chapter are grouped. Sections the analysis marked REVIEW start excluded.
+     * (Ported from the pre-1.0 service: the phase 1 rewrite lost it, so nothing ever created the first structure.)
+     */
+    public function initialize(string $projectId): int
+    {
+        $repository = new LogicalSectionRepository();
+        if ($repository->exists($projectId)) throw new InvalidArgumentException('Logical sections already exist.');
+
+        $statement = Database::connection()->prepare('SELECT * FROM source_sections WHERE project_id=:p ORDER BY spine_index');
+        $statement->execute(['p' => $projectId]);
+        $sourceSections = $statement->fetchAll();
+        if (!$sourceSections) throw new InvalidArgumentException('Analyze the EPUB first.');
+
+        $groups = [];
+        foreach ($sourceSections as $sourceSection) {
+            $chapterNumber = $this->chapterNumber($sourceSection);
+            $lastIndex = count($groups) - 1;
+            if ($chapterNumber !== null && $lastIndex >= 0 && $groups[$lastIndex]['chapter_number'] === $chapterNumber && $this->isAdjacent($groups[$lastIndex], $sourceSection)) {
+                $groups[$lastIndex]['items'][] = $sourceSection;
+                continue;
+            }
+            $groups[] = ['chapter_number' => $chapterNumber, 'items' => [$sourceSection]];
+        }
+
+        $db = Database::connection();
+        $db->beginTransaction();
+        try {
+            $insertLogical = $db->prepare('INSERT INTO logical_sections(id,project_id,position,title,included) VALUES(:id,:p,:position,:title,:included)');
+            $insertSource = $db->prepare('INSERT INTO logical_section_sources(logical_section_id,source_section_id,source_order) VALUES(:logical,:source,:source_order)');
+            $position = 1;
+            foreach ($groups as $group) {
+                $first = $group['items'][0];
+                $logicalId = $this->uuid();
+                $title = $group['chapter_number'] !== null
+                    ? 'Chapter ' . $group['chapter_number']
+                    : trim((string) ($first['title_hint'] ?: pathinfo((string) $first['href'], PATHINFO_FILENAME)));
+                $insertLogical->execute(['id' => $logicalId, 'p' => $projectId, 'position' => $position++, 'title' => $title, 'included' => $first['initial_recommendation'] === 'KEEP' ? 1 : 0]);
+                foreach ($group['items'] as $sourceOrder => $item) {
+                    $insertSource->execute(['logical' => $logicalId, 'source' => $item['id'], 'source_order' => $sourceOrder]);
+                }
+            }
+            $db->commit();
+            return count($groups);
+        } catch (Throwable $error) {
+            if ($db->inTransaction()) $db->rollBack();
+            throw $error;
+        }
+    }
+
+    private function chapterNumber(array $section): ?int
+    {
+        $candidate = pathinfo((string) $section['href'], PATHINFO_FILENAME) . ' ' . (string) $section['manifest_id'];
+        return preg_match('/chapter[_\s-]*0*([0-9]+)(?:[a-z])?/iu', $candidate, $matches) ? (int) $matches[1] : null;
+    }
+
+    private function isAdjacent(array $group, array $section): bool
+    {
+        $last = $group['items'][count($group['items']) - 1];
+        return (int) $section['spine_index'] === (int) $last['spine_index'] + 1;
+    }
+
+    private function uuid():string{$d=random_bytes(16);$d[6]=chr((ord($d[6])&15)|64);$d[8]=chr((ord($d[8])&63)|128);return vsprintf('%s%s-%s-%s-%s-%s%s%s',str_split(bin2hex($d),4));}
 }
