@@ -15,6 +15,7 @@ COPY src/ /app/
 
 RUN mkdir -p /app/storage/projects /app/storage/cache /app/storage/logs \
              /app/storage/tmp /app/storage/backups /app/storage/locks \
+ && chmod -R a+rX /app \
  && chown -R application:application /app
 
 VOLUME /app/storage
