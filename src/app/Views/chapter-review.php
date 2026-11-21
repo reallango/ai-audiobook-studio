@@ -69,6 +69,7 @@ $audioUrl = static fn (string $kind, string $ref, array $extra = []): string => 
       <button type="button" data-generate><?= !$audio['prepared'] ? 'Generate audio' : ($audio['ready_to_assemble'] && !$audio['needs_prepare'] ? ($audio['chapter_audio'] && !$audio['audio_stale'] ? 'Rebuild chapter audio' : 'Build chapter audio') : 'Generate audio') ?></button>
       <?php if ($counts['failed'] > 0): ?><button type="button" class="button secondary" data-retry>Retry failed segments</button><?php endif; ?>
       <button type="button" class="button secondary" data-stop hidden>Cancel</button>
+      <?php if ($audio['prepared']): ?><button type="button" class="button secondary" data-regenerate>Regenerate the whole chapter</button><?php endif; ?>
     </div>
     <div class="audio-progress" hidden><div data-bar></div></div>
     <p class="audio-status" data-audio-status aria-live="polite"><?php

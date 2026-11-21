@@ -138,6 +138,65 @@ final class GenerationService
         return $result;
     }
 
+    /**
+     * Audio state of every chapter in the overview rows (from NarrationService::overview), without extra narration work.
+     * State: n/a (not approved), none, partial, working, failed, outdated, ready.
+     * @param array<int,array<string,mixed>> $overview
+     * @return array<string,array<string,mixed>> keyed by chapter id
+     */
+    public function summaries(string $projectId, array $overview): array
+    {
+        [, $voice, $speed] = $this->settings($projectId);
+        $db = $this->db();
+        $ids = array_column($overview, 'id');
+        $segments = [];
+        $s = $db->prepare('SELECT g.* FROM segments g JOIN logical_sections l ON l.id=g.logical_section_id WHERE l.project_id=:p ORDER BY g.logical_section_id, g.position');
+        $s->execute(['p' => $projectId]);
+        foreach ($s->fetchAll() as $row) $segments[$row['logical_section_id']][] = $row;
+        $audio = [];
+        $a = $db->prepare('SELECT a.* FROM chapter_audio a JOIN logical_sections l ON l.id=a.logical_section_id WHERE l.project_id=:p');
+        $a->execute(['p' => $projectId]);
+        foreach ($a->fetchAll() as $row) $audio[$row['logical_section_id']] = $row;
+        $jobs = [];
+        $j = $db->prepare('SELECT * FROM generation_jobs WHERE project_id=:p');
+        $j->execute(['p' => $projectId]);
+        foreach ($j->fetchAll() as $row) $jobs[$row['logical_section_id']] = $row;
+
+        $out = [];
+        foreach ($overview as $row) {
+            $id = (string) $row['id'];
+            $rows = $segments[$id] ?? [];
+            $done = count(array_filter($rows, static fn (array $r): bool => $r['status'] === 'DONE'));
+            $job = $jobs[$id] ?? null;
+            $info = ['state' => 'n/a', 'done' => $done, 'total' => count($rows), 'duration_ms' => isset($audio[$id]) ? (int) $audio[$id]['duration_ms'] : null];
+            if ($row['status'] === 'approved') {
+                $wanted = array_map(static fn (array $w): string => hash('sha256', $w['text']), Segmenter::split((string) $row['text'], (int) config('tts.segment_max_chars', Segmenter::DEFAULT_MAX_CHARS)));
+                $have = array_map(static fn (array $r): string => (string) $r['text_sha256'], $rows);
+                $settingsOk = count(array_filter($rows, static fn (array $r): bool => $r['voice'] !== $voice || abs((float) $r['speed'] - $speed) > 0.0001)) === 0;
+                $upToDate = $wanted === $have && $settingsOk;
+                if ($job && in_array($job['status'], ['QUEUED', 'RUNNING'], true)) $info['state'] = 'working';
+                elseif ($job && $job['status'] === 'FAILED' && !($upToDate && isset($audio[$id]) && $audio[$id]['segment_signature'] === $this->signature($rows))) $info['state'] = 'failed';
+                elseif (isset($audio[$id])) $info['state'] = $upToDate && $audio[$id]['segment_signature'] === $this->signature($rows) ? 'ready' : 'outdated';
+                elseif ($rows !== []) $info['state'] = $upToDate ? 'partial' : 'outdated';
+                else $info['state'] = 'none';
+            }
+            $out[$id] = $info;
+        }
+        return $out;
+    }
+
+    /** Marks every segment of a chapter for generation again, discarding their audio. */
+    public function resetAll(string $projectId, string $logicalId): int
+    {
+        $this->assertChapter($projectId, $logicalId);
+        $s = $this->db()->prepare('SELECT audio_relpath FROM segments WHERE logical_section_id=:l');
+        $s->execute(['l' => $logicalId]);
+        foreach ($s->fetchAll(PDO::FETCH_COLUMN) as $rel) $this->deleteFile($rel);
+        $reset = $this->db()->prepare("UPDATE segments SET status='PENDING', attempts=0, error=NULL, audio_relpath=NULL, duration_ms=NULL, claimed_at=NULL, updated_at=CURRENT_TIMESTAMP WHERE logical_section_id=:l");
+        $reset->execute(['l' => $logicalId]);
+        return $reset->rowCount();
+    }
+
     /** Marks one segment (or, with null, every failed segment) for generation again. */
     public function reset(string $projectId, string $logicalId, ?string $segmentId): int
     {

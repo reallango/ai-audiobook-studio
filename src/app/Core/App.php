@@ -182,8 +182,35 @@ final class App
     private static function chapters():void
     {
         $project = self::requireProject();
-        $rows = (new NarrationService())->overview((string) $project['id']);
-        self::view('chapters', ['project' => $project, 'rows' => $rows]);
+        $projectId = (string) $project['id'];
+        $narration = new NarrationService();
+        if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
+            try {
+                if (!Csrf::validate(isset($_POST['_token']) ? (string) $_POST['_token'] : null)) throw new \InvalidArgumentException('Security token expired. Try again.');
+                if ($project['status'] === 'ARCHIVED') throw new \InvalidArgumentException('Restore the project before generating audio.');
+                if ((string) ($_POST['action'] ?? '') !== 'generate_all') throw new \InvalidArgumentException('Unknown action.');
+                $overview = $narration->overview($projectId);
+                $states = (new GenerationService())->summaries($projectId, $overview);
+                $jobs = new JobService();
+                $queued = 0;
+                foreach ($overview as $row) {
+                    if (!in_array($states[$row['id']]['state'], ['none', 'partial', 'outdated', 'failed'], true)) continue;
+                    $jobs->enqueue($projectId, (string) $row['id']);
+                    $queued++;
+                }
+                self::flash('success', $queued > 0 ? "Queued $queued chapter(s). The worker handles them one after another; this page shows the progress." : 'Nothing to queue: every approved chapter is up to date or already queued.');
+            } catch (Throwable $error) {
+                self::flash('error', $error->getMessage());
+            }
+            self::redirect('chapters', ['id' => $projectId]);
+        }
+        $rows = $narration->overview($projectId);
+        try {
+            $audio = (new GenerationService())->summaries($projectId, $rows);
+        } catch (\InvalidArgumentException $error) {
+            $audio = [];
+        }
+        self::view('chapters', ['project' => $project, 'rows' => $rows, 'audio' => $audio, 'workerOnline' => JobService::workerOnline()]);
     }
 
     /** One chapter: original blocks beside the narration text, per-block exclude and edit, approve. */
@@ -284,6 +311,9 @@ final class App
                 case 'job':
                     $job = (new JobService())->forChapter($sectionId);
                     self::json(['ok' => true, 'job' => $job, 'counts' => $gen->status($projectId, $sectionId)['counts'], 'worker_online' => JobService::workerOnline()]);
+                    return;
+                case 'reset_all':
+                    self::json(['ok' => true, 'reset' => $gen->resetAll($projectId, $sectionId)]);
                     return;
                 case 'reset':
                     $segment = isset($p['segment_id']) && $p['segment_id'] !== '' ? (string) $p['segment_id'] : null;

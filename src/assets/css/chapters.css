@@ -39,3 +39,10 @@
 .seg-status.done { background: rgba(46, 160, 67, .18); border-color: rgba(46, 160, 67, .7); }
 .seg-status.failed { background: rgba(200, 60, 50, .18); border-color: rgba(200, 60, 50, .7); }
 .seg-status.generating { background: rgba(80, 120, 220, .18); }
+
+.chapters-generate { display: flex; gap: .75rem; align-items: center; flex-wrap: wrap; margin: .5rem 0 1rem; }
+.audio-state { display: inline-block; padding: .1rem .55rem; border-radius: 999px; font-size: .85rem; border: 1px solid rgba(127, 127, 127, .5); }
+.audio-state.ready { background: rgba(46, 160, 67, .18); border-color: rgba(46, 160, 67, .7); }
+.audio-state.working, .audio-state.partial { background: rgba(80, 120, 220, .18); border-color: rgba(80, 120, 220, .7); }
+.audio-state.outdated { background: rgba(210, 150, 20, .2); border-color: rgba(210, 150, 20, .8); }
+.audio-state.failed { background: rgba(200, 60, 50, .18); border-color: rgba(200, 60, 50, .7); }

@@ -113,6 +113,20 @@ check('a voice change makes segments out of date', $gen->status('p', 'L')['needs
 $prep = $gen->prepare('p', 'L');
 check('nothing is reused across voices', [$prep['reused'], $prep['created']], [0, 6]);
 
+// project-wide audio state
+$sum = $gen->summaries('p', $narr->overview('p'));
+check('state: audio exists but the segments were remade for another voice', $sum['L']['state'], 'outdated');
+while ($gen->generateNext('p', 'L')['segment'] !== null) {
+}
+$gen->assemble('p', 'L');
+$sum = $gen->summaries('p', $narr->overview('p'));
+check('state: ready after generating and joining', [$sum['L']['state'], $sum['L']['done'], $sum['L']['total']], ['ready', 6, 6]);
+check('regenerate-everything resets every segment', [$gen->resetAll('p', 'L'), $gen->status('p', 'L')['counts']['pending']], [6, 6]);
+check('and the chapter shows as out of date', $gen->summaries('p', $narr->overview('p'))['L']['state'], 'outdated');
+$narr->unapprove('p', 'L');
+check('an unapproved chapter has no audio state', $gen->summaries('p', $narr->overview('p'))['L']['state'], 'n/a');
+$narr->approve('p', 'L');
+
 // foreign chapter
 check('chapter must belong to the project', expectError(fn () => $gen->generateNext('p', 'nope')), 'rejected');
 

@@ -103,7 +103,7 @@ final class NarrationService
             $chapter = $this->chapter($projectId, (string) $section['id']);
             $rows[] = [
                 'id' => (string) $section['id'], 'position' => (int) $section['position'], 'title' => (string) $section['title'],
-                'words' => $chapter['words'], 'status' => $chapter['status'],
+                'words' => $chapter['words'], 'status' => $chapter['status'], 'text' => $chapter['text'],
                 'edited' => count(array_filter($chapter['items'], static fn (array $i): bool => $i['overridden'] || $i['excluded'])),
             ];
         }
