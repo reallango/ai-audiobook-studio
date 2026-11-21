@@ -1,6 +1,8 @@
 services:
   audiobook-studio:
     build: .
+    # Always rebuild from the checked-out source when the stack is (re)deployed.
+    pull_policy: build
     # After the GitHub Actions build you can use the published image instead:
     # image: ghcr.io/reallango/ai-audiobook-studio:latest
     container_name: audiobook-studio
