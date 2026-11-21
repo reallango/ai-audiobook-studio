@@ -39,10 +39,6 @@ $excludedCount = count(array_filter($chapter['items'], static fn (array $i): boo
   </div>
 </section>
 
-<details class="review-full">
-  <summary>The text that will be sent for narration</summary>
-  <pre><?= e($chapter['text']) ?></pre>
-</details>
 
 <?php
 $mmss = static fn (int $ms): string => sprintf('%d:%02d', intdiv($ms, 60000), intdiv($ms % 60000, 1000));
@@ -112,7 +108,9 @@ $audioUrl = static fn (string $kind, string $ref, array $extra = []): string => 
 <script src="<?= e(base_url('assets/js/chapter-audio.js')) ?>" defer></script>
 <?php endif; ?>
 
+<div class="review-layout">
 <?php if (!$archived): $linkedSets = (new \App\Services\PronunciationService())->projectSets((string) $project['id']); ?>
+<aside class="review-side">
 <section class="workbench" data-workbench
          data-preview="<?= e(base_url('voice-preview')) ?>" data-rule="<?= e(base_url('pronunciation-rule')) ?>" data-token="<?= e($audioToken) ?>"
          data-project="<?= e((string) $project['id']) ?>" data-voice="<?= e($chapter['voice']) ?>" data-speed="<?= e(number_format((float) ($project['tts_speed'] ?? 1.0), 2, '.', '')) ?>">
@@ -139,9 +137,15 @@ $audioUrl = static fn (string $kind, string $ref, array $extra = []): string => 
     <button type="button" class="button secondary" data-wb-save>Save rule</button>
   </div>
 </section>
+</aside>
 <script src="<?= e(base_url('assets/js/workbench.js')) ?>" defer></script>
 <?php endif; ?>
 
+<div class="review-main">
+<details class="review-full">
+  <summary>The text that will be sent for narration</summary>
+  <pre><?= e($chapter['text']) ?></pre>
+</details>
 <section class="review-list">
   <div class="review-cols"><span>Original from the EPUB</span><span>Narration</span></div>
   <?php foreach ($chapter['items'] as $item): ?>
@@ -177,5 +181,7 @@ $audioUrl = static fn (string $kind, string $ref, array $extra = []): string => 
   <?php endforeach; ?>
   <?php if (!$chapter['items']): ?><p class="muted">This chapter has no text blocks.</p><?php endif; ?>
 </section>
+</div>
+</div>
 <?php if ($focus !== ''): ?><script>document.getElementById('b-<?= e($focus) ?>')?.scrollIntoView({block: 'center'});</script><?php endif; ?>
 <?php require APP_ROOT . '/app/Views/layout-bottom.php'; ?>

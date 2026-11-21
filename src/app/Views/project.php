@@ -33,14 +33,6 @@ $capsValue = (int) ($project['normalize_caps'] ?? 1) === 1;
 
 require APP_ROOT . '/app/Views/layout-top.php';
 ?>
-<section class="page-head project-heading">
-  <div>
-    <span class="badge status-<?= e(strtolower($project['status'])) ?>"><?= e(str_replace('_', ' ', $project['status'])) ?></span>
-    <h1><?= e($project['title']) ?></h1>
-    <p class="lead compact">Project ID: <code><?= e($project['id']) ?></code></p>
-  </div>
-</section>
-
 <section class="readiness-panel">
   <h2>Project readiness</h2>
   <div class="readiness-grid">
@@ -89,7 +81,7 @@ require APP_ROOT . '/app/Views/layout-top.php';
 </section>
 
 <?php if ($sourceAsset): ?>
-<details class="panel source-technical"><summary>Source EPUB details</summary><div class="source-summary"><dl><div><dt>Original filename</dt><dd><?= e($sourceAsset['original_name']) ?></dd></div><div><dt>Size</dt><dd><?= number_format((int) $sourceAsset['byte_size']) ?> bytes</dd></div><div><dt>ZIP entries</dt><dd><?= number_format((int) $sourceAsset['zip_entries']) ?></dd></div><div><dt>Imported</dt><dd><?= e($sourceAsset['imported_at']) ?> UTC</dd></div><div class="wide"><dt>SHA-256</dt><dd><code><?= e($sourceAsset['sha256']) ?></code></dd></div></dl></div></details>
+<details class="panel source-technical"><summary>Project and source details</summary><div class="source-summary"><dl><div><dt>Project ID</dt><dd><code><?= e($project['id']) ?></code></dd></div><div><dt>Original filename</dt><dd><?= e($sourceAsset['original_name']) ?></dd></div><div><dt>Size</dt><dd><?= number_format((int) $sourceAsset['byte_size']) ?> bytes</dd></div><div><dt>ZIP entries</dt><dd><?= number_format((int) $sourceAsset['zip_entries']) ?></dd></div><div><dt>Imported</dt><dd><?= e($sourceAsset['imported_at']) ?> UTC</dd></div><div class="wide"><dt>SHA-256</dt><dd><code><?= e($sourceAsset['sha256']) ?></code></dd></div></dl></div></details>
 <?php endif; ?>
 
 <section class="danger-zone"><h2>Project lifecycle</h2><?php if (!$archived): ?><p>Archive this project to hide it from the active list. Project files are preserved.</p><form method="post" action="<?= e(base_url('project-archive')) ?>"><?= csrf_field() ?><input type="hidden" name="id" value="<?= e($project['id']) ?>"><button class="danger" type="submit">Archive project</button></form><?php else: ?><p>This project is archived. Restore it, or permanently delete it by entering its exact title.</p><form class="inline-form" method="post" action="<?= e(base_url('project-restore')) ?>"><?= csrf_field() ?><input type="hidden" name="id" value="<?= e($project['id']) ?>"><button type="submit">Restore project</button></form><form method="post" action="<?= e(base_url('project-delete')) ?>" onsubmit="return confirm('Permanently delete this project and its files?');"><?= csrf_field() ?><input type="hidden" name="id" value="<?= e($project['id']) ?>"><label>Type the exact title to permanently delete<input name="confirmation" required></label><button class="danger" type="submit">Permanently delete project</button></form><?php endif; ?></section>

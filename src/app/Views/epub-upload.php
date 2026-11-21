@@ -3,7 +3,7 @@ declare(strict_types=1);
 $pageTitle = 'Import EPUB';
 require APP_ROOT . '/app/Views/layout-top.php';
 ?>
-<a class="back" href="<?= e(base_url('project', ['id' => $project['id']])) ?>">← <?= e($project['title']) ?></a>
+
 <section class="page-head">
   <div>
     <p class="eyebrow">PHASE 2A · IMMUTABLE SOURCE</p>

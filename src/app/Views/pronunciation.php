@@ -4,6 +4,8 @@ declare(strict_types=1);
 use App\Core\Csrf;
 
 $pageTitle = 'Pronunciation';
+$projectNav = null;
+if ($layer === 'project' && $ref !== '') foreach ($projects as $p) if ((string) $p['id'] === $ref) $projectNav = ['project' => $p];
 require APP_ROOT . '/app/Views/layout-top.php';
 
 $layerUrl = static fn (string $l, string $r = ''): string => base_url('pronunciation', ['layer' => $l, 'ref' => $r]);
