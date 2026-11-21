@@ -10,13 +10,14 @@ use App\Services\ProjectService;
 use App\Services\KokoroClient;
 use App\Services\VoiceCatalog;
 use App\Services\PronunciationService;
+use App\Services\NarrationService;
 use Throwable;
 final class App
 {
     public static function run(): void
     {
         $route=trim((string)($_GET['page']??'projects'),'/');
-        try{match($route){'api-health'=>self::json(self::health()),'diagnostics'=>self::view('diagnostics'),'projects','home',''=>self::projects(),'project-create'=>self::createProject(),'project'=>self::project(),'epub-upload'=>self::epubUpload(),'epub-analyze'=>self::epubAnalyze(),'source-sections'=>self::sourceSections(),'source-section'=>self::sourceSection(),'project-archive'=>self::archiveProject(),'project-restore'=>self::restoreProject(),'project-delete'=>self::deleteProject(),'voice-lab'=>self::voiceLab(),'voice-preview'=>self::voicePreview(),'pronunciation'=>self::pronunciation(),default=>self::notFound()};}
+        try{match($route){'api-health'=>self::json(self::health()),'diagnostics'=>self::view('diagnostics'),'projects','home',''=>self::projects(),'project-create'=>self::createProject(),'project'=>self::project(),'epub-upload'=>self::epubUpload(),'epub-analyze'=>self::epubAnalyze(),'source-sections'=>self::sourceSections(),'source-section'=>self::sourceSection(),'project-archive'=>self::archiveProject(),'project-restore'=>self::restoreProject(),'project-delete'=>self::deleteProject(),'voice-lab'=>self::voiceLab(),'voice-preview'=>self::voicePreview(),'pronunciation'=>self::pronunciation(),'chapters'=>self::chapters(),'chapter-review'=>self::chapterReview(),default=>self::notFound()};}
         catch(Throwable $error){error_log($error->__toString());http_response_code(500);self::view('error',['message'=>config('app.debug',false)?$error->getMessage():'The request could not be completed. Check the application log for details.']);}
     }
     private static function voiceLab():void
@@ -173,6 +174,69 @@ final class App
         header('X-Spoken-Text: ' . rawurlencode(mb_substr($spoken, 0, 600)));
         header('Access-Control-Expose-Headers: X-Spoken-Text');
         echo $wav;
+    }
+
+    /** Chapter list of a project with word counts and approval state. */
+    private static function chapters():void
+    {
+        $project = self::requireProject();
+        $rows = (new NarrationService())->overview((string) $project['id']);
+        self::view('chapters', ['project' => $project, 'rows' => $rows]);
+    }
+
+    /** One chapter: original blocks beside the narration text, per-block exclude and edit, approve. */
+    private static function chapterReview():void
+    {
+        $project = self::requireProject();
+        $projectId = (string) $project['id'];
+        $sectionId = (string) ($_GET['section'] ?? $_POST['section'] ?? '');
+        $svc = new NarrationService();
+
+        if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
+            $focus = (string) ($_POST['block_id'] ?? '');
+            try {
+                if (!Csrf::validate(isset($_POST['_token']) ? (string) $_POST['_token'] : null)) throw new \InvalidArgumentException('Security token expired. Try again.');
+                if ($project['status'] === 'ARCHIVED') throw new \InvalidArgumentException('Restore the project before editing chapters.');
+                switch ((string) ($_POST['action'] ?? '')) {
+                    case 'toggle_block':
+                        $svc->setExcluded($projectId, $sectionId, $focus, ($_POST['excluded'] ?? '') === '1');
+                        break;
+                    case 'set_override':
+                        $svc->setOverride($projectId, $sectionId, $focus, (string) ($_POST['text'] ?? ''));
+                        self::flash('success', 'Narration text saved for that paragraph.');
+                        break;
+                    case 'clear_override':
+                        $svc->setOverride($projectId, $sectionId, $focus, '');
+                        break;
+                    case 'approve':
+                        $svc->approve($projectId, $sectionId);
+                        self::flash('success', 'Chapter approved for generation.');
+                        break;
+                    case 'unapprove':
+                        $svc->unapprove($projectId, $sectionId);
+                        break;
+                    default:
+                        throw new \InvalidArgumentException('Unknown action.');
+                }
+            } catch (Throwable $error) {
+                self::flash('error', $error->getMessage());
+            }
+            self::redirect('chapter-review', ['id' => $projectId, 'section' => $sectionId] + ($focus !== '' ? ['b' => $focus] : []));
+        }
+
+        try {
+            $chapter = $svc->chapter($projectId, $sectionId);
+        } catch (\InvalidArgumentException $error) {
+            self::notFound();
+            return;
+        }
+        $order = array_column($svc->overview($projectId), 'id');
+        $at = array_search($sectionId, $order, true);
+        self::view('chapter-review', [
+            'project' => $project, 'chapter' => $chapter, 'focus' => (string) ($_GET['b'] ?? ''),
+            'prevId' => $at !== false && $at > 0 ? $order[$at - 1] : null,
+            'nextId' => $at !== false && $at < count($order) - 1 ? $order[$at + 1] : null,
+        ]);
     }
 
     private static function projects():void{$show=($_GET['archived']??'')==='1';self::view('projects',['projects'=>(new ProjectRepository())->all($show),'showArchived'=>$show]);}

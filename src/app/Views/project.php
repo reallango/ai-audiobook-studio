@@ -69,7 +69,7 @@ require APP_ROOT . '/app/Views/layout-top.php';
     <?php elseif ($logicalCount === 0): ?>
       <p>Create logical chapters, group split chapter files, and choose included sections.</p><a class="button" href="<?= e($logicalUrl) ?>">Build audiobook structure</a>
     <?php else: ?>
-      <p><?= number_format($logicalCount) ?> logical sections are ready for editing.</p><a class="button" href="<?= e($logicalUrl) ?>">Edit audiobook structure</a>
+      <p><?= number_format($logicalCount) ?> logical sections are ready for editing.</p><a class="button" href="<?= e($logicalUrl) ?>">Edit audiobook structure</a> <a class="button secondary" href="<?= e(base_url('chapters', ['id' => $project['id']])) ?>">Review chapters</a> <a class="button secondary" href="<?= e(base_url('pronunciation', ['layer' => 'project', 'ref' => $project['id']])) ?>">Pronunciation</a>
     <?php endif; ?>
   </article>
 

@@ -1,0 +1,25 @@
+.chapters-summary { margin: 0 0 1rem; }
+.chapters-table { width: 100%; border-collapse: collapse; }
+.chapters-table th, .chapters-table td { text-align: left; padding: .5rem .6rem; border-bottom: 1px solid rgba(127, 127, 127, .25); }
+.chapter-status { display: inline-block; padding: .1rem .55rem; border-radius: 999px; font-size: .85rem; border: 1px solid rgba(127, 127, 127, .5); }
+.chapter-status.approved { background: rgba(46, 160, 67, .18); border-color: rgba(46, 160, 67, .7); }
+.chapter-status.changed { background: rgba(210, 150, 20, .2); border-color: rgba(210, 150, 20, .8); }
+.review-head { display: flex; justify-content: space-between; gap: 1rem; flex-wrap: wrap; align-items: start; }
+.review-actions { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; }
+.review-actions form { margin: 0; }
+.review-full { margin: 0 0 1rem; }
+.review-full pre { white-space: pre-wrap; max-height: 24rem; overflow: auto; padding: .75rem; border: 1px solid rgba(127, 127, 127, .35); border-radius: 8px; }
+.review-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; font-size: .85rem; opacity: .65; padding: 0 .25rem .35rem; }
+.review-item { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; padding: .6rem .25rem; border-top: 1px solid rgba(127, 127, 127, .25); }
+.review-item.focus { background: rgba(80, 120, 220, .1); }
+.review-item.skipped .review-source { opacity: .5; }
+.review-item p { margin: .2rem 0; }
+.review-source { opacity: .8; }
+.block-type { font-size: .75rem; text-transform: uppercase; letter-spacing: .04em; opacity: .6; }
+.badge-line { font-size: .8rem; opacity: .75; }
+.muted { opacity: .6; }
+.review-tools { display: flex; gap: 1rem; align-items: start; flex-wrap: wrap; margin-top: .25rem; }
+.review-tools form { margin: 0; }
+.edit-block textarea { width: 100%; box-sizing: border-box; font: inherit; padding: .5rem; }
+.link-button { background: none; border: 0; padding: 0; color: inherit; text-decoration: underline; cursor: pointer; font: inherit; font-size: .85rem; }
+@media (max-width: 760px) { .review-item, .review-cols { grid-template-columns: 1fr; } }
