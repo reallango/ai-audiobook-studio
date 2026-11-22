@@ -1,8 +1,8 @@
 (() => {
   'use strict';
   const book = document.querySelector('[data-book]');
-  if (!book) return;
   const wb = document.querySelector('[data-workbench]');
+  if (!book && !wb) return;
   const field = name => (wb ? wb.querySelector(name) : null);
   const text = field('[data-wb-text]');
   const written = field('[data-wb-written]');
@@ -10,6 +10,8 @@
   const audio = field('[data-wb-audio]');
   const status = field('[data-wb-status]');
   const hear = field('[data-wb-hear]');
+  const hearOriginal = field('[data-wb-hear-original]');
+  const findExample = field('[data-wb-example]');
   const save = field('[data-wb-save]');
   const layer = field('[data-wb-layer]');
   const whole = field('[data-wb-whole]');
@@ -33,27 +35,110 @@
     return (hit || source).slice(0, 600);
   }
 
-  /** Puts words into the workbench. */
-  function load({source, para, shownSpoken, layerValue, label, autoHear}) {
+  async function exampleFor(word) {
+    if (!wb || !word) return '';
+    try {
+      const url = `${wb.dataset.example}${wb.dataset.example.includes('?') ? '&' : '?'}project=${encodeURIComponent(wb.dataset.project || '')}&q=${encodeURIComponent(word)}`;
+      const reply = await (await fetch(url, {credentials: 'same-origin'})).json();
+      return reply && reply.sentence ? reply.sentence : '';
+    } catch (error) {
+      return '';
+    }
+  }
+
+  /** Text to speech through the app. `rules` false sends the text exactly as given. */
+  async function speak({text: spokenText, voice, speed, token, url, rules, project, temp}) {
+    const response = await post(url, token, {
+      text: spokenText, voice, speed, apply_pronunciation: rules, project_id: project || '', temp_rules: temp || []
+    });
+    return {blob: await response.blob(), said: decodeURIComponent(response.headers.get('X-Spoken-Text') || '')};
+  }
+
+  /** Puts words into the panel; with no paragraph at hand it looks for a sentence in the book. */
+  async function load({source, para, shownSpoken, layerValue, label, autoHear}) {
     if (!wb) return;
     written.value = source;
     spoken.value = shownSpoken;
-    text.value = sentenceOf(para.dataset.source, source);
     from.textContent = label ? `Now: ${label}.` : '';
     if (layerValue) [...layer.options].forEach(o => { if (o.value === layerValue) layer.value = layerValue; });
     status.textContent = '';
-    if (autoHear) hear.click();
+    if (para) {
+      text.value = sentenceOf(para.dataset.source, source);
+    } else {
+      status.textContent = 'Looking for a sentence in the book…';
+      text.value = (await exampleFor(source)) || source;
+      status.textContent = '';
+    }
+    wb.scrollIntoView({block: 'nearest'});
+    if (autoHear) runHear(true);
   }
 
-  // ----- click a marked word: load it and play it -----
+  // ----- the panel's two buttons: as the book spells it, and with the rules and my change -----
+  async function runHear(withChange) {
+    if (!text.value.trim()) { status.textContent = 'Pick a word first, or type a sentence.'; return; }
+    const button = withChange ? hear : hearOriginal;
+    button.disabled = true;
+    status.textContent = 'Generating…';
+    try {
+      const temp = withChange && written.value.trim() ? [{pattern: written.value.trim(), replacement: spoken.value}] : [];
+      const result = await speak({text: text.value, voice: wb.dataset.voice, speed: Number(wb.dataset.speed), token: wb.dataset.token, url: wb.dataset.preview, rules: withChange, project: wb.dataset.project, temp});
+      if (audio.dataset.url) URL.revokeObjectURL(audio.dataset.url);
+      audio.dataset.url = URL.createObjectURL(result.blob);
+      audio.src = audio.dataset.url;
+      audio.hidden = false;
+      const show = result.said || text.value;
+      status.textContent = `${withChange ? 'With my change' : 'As written'}: ${show.slice(0, 240)}${show.length > 240 ? '…' : ''}`;
+      audio.play().catch(() => {});
+    } catch (error) {
+      status.textContent = error.message;
+    } finally {
+      button.disabled = false;
+    }
+  }
+
+  if (wb) {
+    hear.addEventListener('click', () => runHear(true));
+    hearOriginal.addEventListener('click', () => runHear(false));
+    findExample.addEventListener('click', async () => {
+      if (!written.value.trim()) { status.textContent = 'Fill in "Written" first.'; return; }
+      status.textContent = 'Looking for a sentence in the book…';
+      const sentence = await exampleFor(written.value.trim());
+      if (sentence) { text.value = sentence; status.textContent = ''; } else status.textContent = 'That word is not in the book.';
+    });
+    save.addEventListener('click', async () => {
+      if (!written.value.trim()) { status.textContent = 'Fill in "Written" first.'; return; }
+      if (spoken.value === '' && !confirm('The spoken form is empty. That removes this text from the narration. Save it anyway?')) return;
+      const [scope, ref] = layer.value.split('|');
+      save.disabled = true;
+      try {
+        await post(wb.dataset.rule, wb.dataset.token, {layer: scope, ref, pattern: written.value.trim(), replacement: spoken.value, whole_word: whole.checked});
+        status.textContent = 'Saved. Reloading to show the new text.';
+        setTimeout(() => location.reload(), 900);
+      } catch (error) {
+        status.textContent = error.message;
+        save.disabled = false;
+      }
+    });
+
+    // ----- "try" buttons on rule rows and ALL-CAPS rows -----
+    document.addEventListener('click', event => {
+      const button = event.target.closest('[data-wb-load]');
+      if (!button) return;
+      event.preventDefault();
+      load({source: button.dataset.written, shownSpoken: button.dataset.spoken, layerValue: button.dataset.layer, label: button.dataset.label, autoHear: true});
+    });
+  }
+
+  if (!book) return;
+
+  // ----- click a marked word in the chapter: load it and play it -----
   book.addEventListener('click', event => {
     if (editing) return;
     const mark = event.target.closest('mark.chg');
     if (!mark || !wb) return;
     const selection = window.getSelection();
     if (selection && !selection.isCollapsed) return;       // a drag-selection is handled on mouseup
-    const para = mark.closest('.para');
-    load({source: mark.dataset.src, para, shownSpoken: mark.dataset.out, layerValue: mark.dataset.layer || `project|${wb.dataset.project}`, label: `${mark.dataset.label}`, autoHear: true});
+    load({source: mark.dataset.src, para: mark.closest('.para'), shownSpoken: mark.dataset.out, layerValue: mark.dataset.layer || `project|${wb.dataset.project}`, label: mark.dataset.label, autoHear: true});
   });
   book.addEventListener('keydown', event => {
     if (event.key === 'Enter' && event.target.matches && event.target.matches('mark.chg')) event.target.click();
@@ -78,50 +163,40 @@
     range.cloneContents().childNodes.forEach(walk);
     source = source.trim().replace(/^[“"]+|[”".,;:!?]+$/g, '');
     if (!source) return;
-    load({source, para, shownSpoken: shown.replace(/^[“"]+|[”".,;:!?]+$/g, ''), layerValue: `project|${wb.dataset.project}`, label: source === shown ? 'unchanged text' : 'changed by rules', autoHear: false});
-    status.textContent = 'Type how it should sound in "Spoken", then press Hear it.';
+    load({source, para, shownSpoken: shown.replace(/^[“"]+|[”".,;:!?]+$/g, ''), layerValue: `project|${wb.dataset.project}`, label: source === shown ? 'unchanged text' : 'changed by rules', autoHear: false})
+      .then(() => { status.textContent = 'Type how it should sound in "Spoken", then compare with the two buttons.'; });
   });
 
-  if (wb) {
-    hear.addEventListener('click', async () => {
-      if (!text.value.trim()) { status.textContent = 'Click a word in the text first, or type a sentence.'; return; }
-      hear.disabled = true;
-      status.textContent = 'Generating…';
-      try {
-        const temp = written.value.trim() ? [{pattern: written.value.trim(), replacement: spoken.value}] : [];
-        const response = await post(wb.dataset.preview, wb.dataset.token, {
-          text: text.value, voice: wb.dataset.voice, speed: Number(wb.dataset.speed),
-          apply_pronunciation: true, project_id: wb.dataset.project, temp_rules: temp
-        });
-        const blob = await response.blob();
-        if (audio.dataset.url) URL.revokeObjectURL(audio.dataset.url);
-        audio.dataset.url = URL.createObjectURL(blob);
-        audio.src = audio.dataset.url;
-        audio.hidden = false;
-        const said = decodeURIComponent(response.headers.get('X-Spoken-Text') || '');
-        status.textContent = said ? `Spoken as: ${said.slice(0, 240)}${said.length > 240 ? '…' : ''}` : 'Done.';
-        audio.play().catch(() => {});
-      } catch (error) {
-        status.textContent = error.message;
-      } finally {
-        hear.disabled = false;
-      }
-    });
-
-    save.addEventListener('click', async () => {
-      if (!written.value.trim()) { status.textContent = 'Fill in "Written" first.'; return; }
-      if (spoken.value === '' && !confirm('The spoken form is empty. That removes this text from the narration. Save it anyway?')) return;
-      const [scope, ref] = layer.value.split('|');
-      save.disabled = true;
-      try {
-        await post(wb.dataset.rule, wb.dataset.token, {layer: scope, ref, pattern: written.value.trim(), replacement: spoken.value, whole_word: whole.checked});
-        status.textContent = 'Saved. Reloading: the chapter now shows the new text and needs approving again.';
-        setTimeout(() => location.reload(), 900);
-      } catch (error) {
-        status.textContent = error.message;
-        save.disabled = false;
-      }
-    });
+  // ----- listen to one paragraph: as it will be narrated, or exactly as the book spells it -----
+  let player = null;
+  let playingButton = null;
+  function stopPlayer() {
+    if (player) { player.pause(); player = null; }
+    if (playingButton) { playingButton.textContent = playingButton.dataset.label; playingButton.disabled = false; playingButton = null; }
+  }
+  async function listen(button, para) {
+    const wasPlaying = playingButton === button;
+    stopPlayer();
+    if (wasPlaying) return;
+    const asWritten = button.dataset.listen === 'source';
+    const spokenText = (asWritten ? para.dataset.source : para.dataset.narration).trim();
+    if (!spokenText) return;
+    button.dataset.label ||= button.textContent;
+    playingButton = button;
+    button.textContent = 'Loading…';
+    try {
+      // the narration already has the rules and edits in it; the book's own text is sent untouched
+      const result = await speak({text: spokenText, voice: book.dataset.voice, speed: Number(book.dataset.speed), token: book.dataset.token, url: book.dataset.preview, rules: false, project: ''});
+      if (playingButton !== button) return;
+      const url = URL.createObjectURL(result.blob);
+      player = new Audio(url);
+      player.addEventListener('ended', stopPlayer);
+      button.textContent = '■ Stop';
+      await player.play();
+    } catch (error) {
+      stopPlayer();
+      alert(error.message);
+    }
   }
 
   // ----- edit a paragraph in place -----
@@ -141,6 +216,7 @@
   }
   function startEdit(para) {
     endEdit(true);
+    stopPlayer();
     const el = para.querySelector('[data-para-text]');
     const html = el.innerHTML;
     el.textContent = para.dataset.narration;
@@ -185,6 +261,8 @@
   book.addEventListener('click', async event => {
     const para = event.target.closest('.para');
     if (!para) return;
+    const listenButton = event.target.closest('[data-listen]');
+    if (listenButton) { listen(listenButton, para); return; }
     if (event.target.closest('[data-edit]')) { startEdit(para); return; }
     const skip = event.target.closest('[data-skip]');
     const reset = event.target.closest('[data-reset-edits]');

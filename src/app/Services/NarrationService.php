@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Core\Database;
 use App\Repositories\LogicalSectionRepository;
+use App\Repositories\ProjectRepository;
 use InvalidArgumentException;
 use PDO;
 
@@ -160,6 +161,26 @@ final class NarrationService
         foreach ($edits as $e) $insert->execute(['l' => $logicalId, 'b' => $blockId, 's' => $e['start'], 'n' => $e['len'], 'src' => $e['src'], 'dst' => $e['dst']]);
         $db->commit();
         $this->prune($logicalId, $blockId);
+    }
+
+    /**
+     * A sentence of the book that contains the word, to hear a rule in context. With no project, the most recent ones are searched.
+     */
+    public function exampleSentence(?string $projectId, string $word): ?string
+    {
+        $word = trim($word);
+        if ($word === '' || mb_strlen($word) > 100) return null;
+        $ids = $projectId !== null && $projectId !== '' ? [$projectId] : array_slice(array_column((new ProjectRepository())->all(false), 'id'), 0, 5);
+        foreach ($ids as $id) {
+            foreach ($this->sourceTexts((string) $id) as $paragraph) {
+                if (mb_stripos($paragraph, $word) === false) continue;
+                foreach (Segmenter::sentences($paragraph) as $sentence) {
+                    if (mb_stripos($sentence, $word) !== false) return mb_substr($sentence, 0, 600);
+                }
+                return mb_substr($paragraph, 0, 600);
+            }
+        }
+        return null;
     }
 
     /** Removes every hand edit of a paragraph, so the rules alone decide its narration. */

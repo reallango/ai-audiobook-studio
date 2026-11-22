@@ -41,6 +41,8 @@ $explain = [
   <?php endforeach; ?>
 </nav>
 
+<div class="review-layout">
+<div class="review-main">
 <section class="form-panel pron-panel">
   <p class="pron-explain"><?= e($explain[$layer]) ?></p>
 
@@ -124,6 +126,7 @@ $explain = [
             <td><?= (int) $r['whole_word'] ? 'whole word' : 'anywhere' ?>, <?= (int) $r['case_sensitive'] ? 'match case' : 'any case' ?></td>
             <td><?= e($r['note']) ?></td>
             <td class="pron-actions">
+              <button type="button" class="link-button" data-wb-load data-written="<?= e((string) $r['pattern']) ?>" data-spoken="<?= e((string) $r['replacement']) ?>" data-layer="<?= e($layer . '|' . $ref) ?>" data-label="rule in this layer">try</button>
               <form method="post"><?= $hidden() ?><input type="hidden" name="action" value="toggle_rule"><input type="hidden" name="id" value="<?= (int) $r['id'] ?>"><input type="hidden" name="enabled" value="<?= (int) $r['enabled'] ? '0' : '1' ?>"><button type="submit" class="link-button"><?= (int) $r['enabled'] ? 'disable' : 'enable' ?></button></form>
               <form method="post"><?= $hidden() ?><input type="hidden" name="action" value="delete_rule"><input type="hidden" name="id" value="<?= (int) $r['id'] ?>"><button type="submit" class="link-button danger">delete</button></form>
             </td>
@@ -174,7 +177,7 @@ $explain = [
           <td><code><?= e($row['token']) ?></code></td>
           <td><?= (int) $row['count'] ?></td>
           <td><?= $row['becomes'] === null ? '<em>left as written (a rule decides)</em>' : ($capsOn ? '<code>' . e($row['becomes']) . '</code>' : '<em>spelled out</em>') ?></td>
-          <td><a href="<?= e(base_url('pronunciation', ['layer' => 'project', 'ref' => $ref, 'p' => $row['token'], 's' => $row['becomes'] ?? $row['token']])) ?>#add">make a rule</a></td>
+          <td><button type="button" class="link-button" data-wb-load data-written="<?= e($row['token']) ?>" data-spoken="<?= e($row['becomes'] ?? $row['token']) ?>" data-layer="project|<?= e($ref) ?>" data-label="ALL-CAPS word">try</button> <a href="<?= e(base_url('pronunciation', ['layer' => 'project', 'ref' => $ref, 'p' => $row['token'], 's' => $row['becomes'] ?? $row['token']])) ?>#add">make a rule</a></td>
         </tr>
       <?php endforeach; ?>
       </tbody>
@@ -214,5 +217,23 @@ $explain = [
     </div>
   <?php endif; ?>
 </section>
+</div>
+<?php
+    $wbProject = ($layer === 'project' && $ref !== '') ? $ref : null;
+    $projectRow = $wbProject !== null ? (new \App\Repositories\ProjectRepository())->find($wbProject) : null;
+    $wbVoice = $layer === 'voice' && $ref !== '' ? $ref : (string) (($projectRow['active_voice_profile_id'] ?? '') ?: \App\Services\VoiceCatalog::DEFAULT_VOICE);
+    $wbSpeed = (float) ($projectRow['tts_speed'] ?? 1.0);
+    $wbToken = \App\Core\Csrf::token();
+    $wbLayers = [];
+    if ($layer === 'default') $wbLayers[] = ['default|', 'Default, every book and voice'];
+    elseif ($ref !== '') $wbLayers[] = [$layer . '|' . $ref, 'This ' . strtolower($layers[$layer]) . ($layer === 'set' && $currentSet ? ': ' . $currentSet['name'] : '')];
+    foreach ($projectSets as $ps) $wbLayers[] = ['set|' . $ps['id'], 'Series set: ' . $ps['name']];
+    if ($wbProject !== null) $wbLayers[] = ['voice|' . $wbVoice, 'Voice ' . $wbVoice . ', every book'];
+    $wbLayers[] = ['default|', 'Default, every book and voice'];
+    $seen = [];
+    $wbLayers = array_values(array_filter($wbLayers, static function (array $l) use (&$seen): bool { if (isset($seen[$l[0]])) return false; return $seen[$l[0]] = true; }));
+    require APP_ROOT . '/app/Views/workbench.php';
+?>
+</div>
 <script src="<?= e(base_url('assets/js/pronunciation.js')) ?>" defer></script>
 <?php require APP_ROOT . '/app/Views/layout-bottom.php'; ?>

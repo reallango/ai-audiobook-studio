@@ -99,6 +99,11 @@ $narr->approve('p', 'L');
 $narr->saveParagraphText('p', 'L', 'b1', "Sisko's raft left Bay-jorrr.");
 check('an edit after approval shows as changed', $narr->chapter('p', 'L')['status'], 'changed');
 
+// example sentences, to hear a rule in context
+check('an example sentence from the book contains the word', $narr->exampleSentence('p', 'bajor'), "Sisko's ship left Bajor.");
+check('without a project, recent projects are searched', $narr->exampleSentence(null, 'Bajor'), "Sisko's ship left Bajor.");
+check('a word that is not in the book has no example', [$narr->exampleSentence('p', 'Cardassia'), $narr->exampleSentence('p', '')], [null, null]);
+
 @unlink($db);
 echo $failures === 0 ? "\nall passed\n" : "\n$failures failed\n";
 exit($failures === 0 ? 0 : 1);

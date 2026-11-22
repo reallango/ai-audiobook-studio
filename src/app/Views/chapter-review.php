@@ -150,7 +150,8 @@ $renderPieces = static function (array $item): string {
     </p>
     <?php if ($chapter['announced'] !== null): ?><p class="announce">Read aloud first: <q><?= e($chapter['announced']) ?></q></p><?php endif; ?>
     <article class="book" data-book
-             data-endpoint="<?= e(base_url('chapter-text')) ?>" data-token="<?= e($audioToken) ?>"
+             data-endpoint="<?= e(base_url('chapter-text')) ?>" data-token="<?= e($audioToken) ?>" data-preview="<?= e(base_url('voice-preview')) ?>"
+             data-voice="<?= e((string) $chapter['voice']) ?>" data-speed="<?= e(number_format((float) ($audio['speed'] ?? $project['tts_speed'] ?? 1.0), 2, '.', '')) ?>"
              data-project="<?= e((string) $project['id']) ?>" data-section="<?= e((string) $section['id']) ?>">
       <?php foreach ($chapter['items'] as $item):
           $isHeading = in_array($item['type'], ['h1', 'h2', 'h3', 'h4', 'h5', 'h6'], true);
@@ -161,6 +162,8 @@ $renderPieces = static function (array $item): string {
           <<?= $tag ?> class="para-text <?= $isHeading ? 'is-heading' : '' ?>" data-para-text><?= $renderPieces($item) ?></<?= $tag ?>>
           <?php if ($item['narration'] === '' && !$item['excluded']): ?><small class="para-note">Nothing is read for this paragraph.</small><?php endif; ?>
           <div class="para-bar">
+            <?php if ($item['narration'] !== ''): ?><button type="button" class="link-button" data-listen="narration" title="Hear this paragraph as it will be narrated">&#9654; Listen</button>
+            <button type="button" class="link-button" data-listen="source" title="Hear this paragraph exactly as the book spells it">&#9654; As written</button><?php endif; ?>
             <?php if ($item['excluded']): ?>
               <span class="para-note">Skipped, not narrated.</span>
               <?php if (!$archived): ?><button type="button" class="link-button" data-skip="0">Narrate it</button><?php endif; ?>
@@ -177,38 +180,18 @@ $renderPieces = static function (array $item): string {
     </article>
   </div>
 
-  <?php if (!$archived): $linkedSets = (new \App\Services\PronunciationService())->projectSets((string) $project['id']); ?>
-  <aside class="review-side">
-    <section class="workbench" data-workbench
-             data-preview="<?= e(base_url('voice-preview')) ?>" data-rule="<?= e(base_url('pronunciation-rule')) ?>" data-token="<?= e($audioToken) ?>"
-             data-project="<?= e((string) $project['id']) ?>" data-voice="<?= e($chapter['voice']) ?>" data-speed="<?= e(number_format((float) ($audio['speed'] ?? $project['tts_speed'] ?? 1.0), 2, '.', '')) ?>">
-      <h2>Pronunciation</h2>
-      <p class="muted">Click an underlined word, or select words in the text. Change how they sound, listen, then save it as a rule. Nothing changes until you save.</p>
-      <p class="wb-from" data-wb-from></p>
-      <div class="wb-row">
-        <label>Written <input data-wb-written maxlength="100" placeholder="Bajor"></label>
-        <label>Spoken <input data-wb-spoken maxlength="200" placeholder="Bay-jor"></label>
-      </div>
-      <label class="wb-text">Sentence to hear <textarea data-wb-text rows="3" maxlength="3000" placeholder="Click a word in the text, or type here"></textarea></label>
-      <div class="wb-row"><button type="button" data-wb-hear>Hear it</button></div>
-      <audio controls hidden data-wb-audio></audio>
-      <p class="wb-status" data-wb-status aria-live="polite"></p>
-      <div class="wb-row">
-        <label>Save as a rule in
-          <select data-wb-layer>
-            <option value="project|<?= e((string) $project['id']) ?>">This project only</option>
-            <?php foreach ($linkedSets as $set): ?><option value="set|<?= e((string) $set['id']) ?>">Series set: <?= e($set['name']) ?></option><?php endforeach; ?>
-            <option value="voice|<?= e($chapter['voice']) ?>">Voice <?= e($chapter['voice']) ?>, every book</option>
-            <option value="default|">Default, every book and voice</option>
-          </select>
-        </label>
-        <label class="check"><input type="checkbox" data-wb-whole checked> whole word</label>
-        <button type="button" class="button secondary" data-wb-save>Save rule</button>
-      </div>
-    </section>
-  </aside>
-  <script src="<?= e(base_url('assets/js/workbench.js')) ?>" defer></script>
-  <?php endif; ?>
+  <?php if (!$archived):
+      $linkedSets = (new \App\Services\PronunciationService())->projectSets((string) $project['id']);
+      $wbLayers = [['project|' . $project['id'], 'This project only']];
+      foreach ($linkedSets as $set) $wbLayers[] = ['set|' . $set['id'], 'Series set: ' . $set['name']];
+      $wbLayers[] = ['voice|' . $chapter['voice'], 'Voice ' . $chapter['voice'] . ', every book'];
+      $wbLayers[] = ['default|', 'Default, every book and voice'];
+      $wbProject = (string) $project['id'];
+      $wbVoice = (string) $chapter['voice'];
+      $wbSpeed = (float) ($audio['speed'] ?? $project['tts_speed'] ?? 1.0);
+      $wbToken = (string) $audioToken;
+      require APP_ROOT . '/app/Views/workbench.php';
+  endif; ?>
 </div>
 <?php if ($focus !== ''): ?><script>document.getElementById('b-<?= e($focus) ?>')?.scrollIntoView({block: 'center'});</script><?php endif; ?>
 <?php require APP_ROOT . '/app/Views/layout-bottom.php'; ?>

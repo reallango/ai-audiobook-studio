@@ -22,7 +22,7 @@ final class App
     public static function run(): void
     {
         $route=trim((string)($_GET['page']??'projects'),'/');
-        try{match($route){'api-health'=>self::json(self::health()),'diagnostics'=>self::view('diagnostics'),'projects','home',''=>self::projects(),'project-create'=>self::createProject(),'project'=>self::project(),'epub-upload'=>self::epubUpload(),'epub-analyze'=>self::epubAnalyze(),'source-sections'=>self::sourceSections(),'source-section'=>self::sourceSection(),'project-archive'=>self::archiveProject(),'project-restore'=>self::restoreProject(),'project-delete'=>self::deleteProject(),'voice-lab'=>self::voiceLab(),'voice-preview'=>self::voicePreview(),'pronunciation'=>self::pronunciation(),'pronunciation-rule'=>self::pronunciationRule(),'chapters'=>self::chapters(),'chapter-review'=>self::chapterReview(),'chapter-audio'=>self::chapterAudio(),'chapter-text'=>self::chapterText(),'audio'=>self::audio(),'export'=>self::export(),default=>self::notFound()};}
+        try{match($route){'api-health'=>self::json(self::health()),'diagnostics'=>self::view('diagnostics'),'projects','home',''=>self::projects(),'project-create'=>self::createProject(),'project'=>self::project(),'epub-upload'=>self::epubUpload(),'epub-analyze'=>self::epubAnalyze(),'source-sections'=>self::sourceSections(),'source-section'=>self::sourceSection(),'project-archive'=>self::archiveProject(),'project-restore'=>self::restoreProject(),'project-delete'=>self::deleteProject(),'voice-lab'=>self::voiceLab(),'voice-preview'=>self::voicePreview(),'pronunciation'=>self::pronunciation(),'pronunciation-rule'=>self::pronunciationRule(),'pronunciation-example'=>self::pronunciationExample(),'chapters'=>self::chapters(),'chapter-review'=>self::chapterReview(),'chapter-audio'=>self::chapterAudio(),'chapter-text'=>self::chapterText(),'audio'=>self::audio(),'export'=>self::export(),default=>self::notFound()};}
         catch(Throwable $error){error_log($error->__toString());http_response_code(500);self::view('error',['message'=>config('app.debug',false)?$error->getMessage():'The request could not be completed. Check the application log for details.']);}
     }
     private static function voiceLab():void
@@ -146,6 +146,14 @@ final class App
             'capsAudit' => $capsAudit, 'capsOn' => $layer === 'project' && $ref !== '' ? (int) (($auditProject['normalize_caps'] ?? 1)) === 1 : true,
             'prefillWritten' => mb_substr((string) ($_GET['p'] ?? ''), 0, 100), 'prefillSpoken' => mb_substr((string) ($_GET['s'] ?? ''), 0, 200),
         ]);
+    }
+
+    /** GET ?page=pronunciation-example&project=ID&q=word -> {ok, sentence}: a sentence of the book containing the word. */
+    private static function pronunciationExample():void
+    {
+        $project = (string) ($_GET['project'] ?? '');
+        $sentence = (new NarrationService())->exampleSentence($project !== '' ? $project : null, (string) ($_GET['q'] ?? ''));
+        self::json(['ok' => true, 'sentence' => $sentence]);
     }
 
     /** POST JSON {_token, layer, ref, pattern, replacement, whole_word?, case_sensitive?, note?} -> saves one rule (used by the chapter workbench). */
