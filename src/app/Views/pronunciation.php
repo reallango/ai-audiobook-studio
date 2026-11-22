@@ -125,7 +125,7 @@ $explain = [
       <label class="check"><input type="checkbox" name="case_sensitive"> match case</label>
       <button type="submit">Add or update</button>
     </form>
-    <details class="regex-helper" id="regex-helper" data-url="<?= e(base_url('index.php?page=rulesets-regex')) ?>" data-project="<?= e($layer === 'project' ? $ref : '') ?>">
+    <details class="regex-helper" id="regex-helper" data-url="<?= e(base_url('rulesets-regex')) ?>" data-project="<?= e($layer === 'project' ? $ref : '') ?>">
       <summary>Pattern builder: find and change text without knowing regex</summary>
       <div class="rh-body" id="rh-mount"><noscript>The pattern builder needs JavaScript.</noscript></div>
     </details>
