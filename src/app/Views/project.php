@@ -30,45 +30,74 @@ $voiceValue = (string) ($project['active_voice_profile_id'] ?: '');
 $bitrateValue = (int) $project['audio_bitrate_kbps'];
 $speedValue = (float) ($project['tts_speed'] ?? 1.0);
 $capsValue = (int) ($project['normalize_caps'] ?? 1) === 1;
+$flow = \App\Services\ProjectWorkflow::build($project, (bool) $sourceAsset, (bool) $sourceAnalyzed, $sourceAsset['original_name'] ?? null);
 
 require APP_ROOT . '/app/Views/layout-top.php';
 ?>
-<section class="readiness-panel">
-  <h2>Project readiness</h2>
-  <div class="readiness-grid">
-    <div class="readiness-item <?= $sourceAsset ? 'complete' : 'pending' ?>"><span><?= $sourceAsset ? '✓' : '○' ?></span><div><strong>EPUB imported</strong><small><?= $sourceAsset ? e($sourceAsset['original_name']) : 'Waiting for source EPUB' ?></small></div></div>
-    <div class="readiness-item <?= $sourceAnalyzed ? 'complete' : 'pending' ?>"><span><?= $sourceAnalyzed ? '✓' : '○' ?></span><div><strong>Source analyzed</strong><small><?= $sourceAnalyzed ? 'Metadata, spine, and source blocks ready' : 'Analysis not complete' ?></small></div></div>
-    <div class="readiness-item <?= $logicalCount > 0 ? 'complete' : 'pending' ?>"><span><?= $logicalCount > 0 ? '✓' : '○' ?></span><div><strong>Audiobook structure</strong><small><?= $logicalCount > 0 ? $logicalCount . ' logical sections, ' . $includedCount . ' included' : 'Logical sections not created' ?></small></div></div>
-    <div class="readiness-item <?= $voiceValue !== '' ? 'complete' : 'pending' ?>"><span><?= $voiceValue !== '' ? '✓' : '○' ?></span><div><strong>Voice selected</strong><small><?= $voiceValue !== '' ? e($voiceValue) : 'Choose a voice before generation' ?></small></div></div>
+<?php
+$next = $flow['next'];
+$c = $flow['counts'];
+$actions = static function (string $key) use ($project, $sourceAsset, $sourceAnalyzed, $logicalUrl, $archived, $flow): string {
+    $link = static fn (string $label, string $href, bool $primary = false): string => '<a class="button' . ($primary ? '' : ' secondary') . '" href="' . e($href) . '">' . e($label) . '</a>';
+    $id = $project['id'];
+    $out = '';
+    switch ($key) {
+        case 'source':
+            if (!$sourceAsset) { if (!$archived) $out .= $link('Import EPUB', base_url('epub-upload', ['id' => $id]), true); }
+            elseif (!$sourceAnalyzed) { if (!$archived) $out .= '<form method="post" action="' . e(base_url('epub-analyze')) . '">' . csrf_field() . '<input type="hidden" name="id" value="' . e($id) . '"><button type="submit">Analyze EPUB</button></form>'; }
+            else $out .= $link('Source sections', base_url('source-sections', ['id' => $id]));
+            break;
+        case 'structure':
+            if ($sourceAnalyzed) $out .= $link($flow['counts']['total'] > 0 ? 'Edit structure' : 'Build structure', $logicalUrl, $flow['counts']['total'] === 0);
+            break;
+        case 'voice':
+            $out .= $link('Rulesets', base_url('rulesets', ['layer' => 'project', 'ref' => $id])) . $link('Voice Lab', base_url('voice-lab')) . $link('Settings', '#settings');
+            break;
+        case 'review':
+            if ($flow['counts']['included'] > 0) $out .= $link('Review chapters', base_url('chapters', ['id' => $id]));
+            break;
+        case 'generate':
+            if ($flow['counts']['approved'] > 0) $out .= $link('Chapters and audio', base_url('chapters', ['id' => $id]));
+            break;
+        case 'export':
+            if ($flow['export'] !== null) $out .= $link('Download M4B', base_url('export', ['id' => $id, 'kind' => 'm4b'])) . $link('Download M4A files (ZIP)', base_url('export', ['id' => $id, 'kind' => 'zip']));
+            if ($flow['counts']['ready'] > 0) $out .= $link($flow['export'] !== null ? 'Rebuild' : 'Export options', base_url('chapters', ['id' => $id]) . '#export');
+            break;
+    }
+    return $out;
+};
+?>
+<section class="next-step">
+  <div class="next-copy">
+    <small>Next step</small>
+    <h2><?= e($next['label']) ?></h2>
+    <p><?= e($next['reason']) ?></p>
   </div>
+  <?php if ($next['type'] === 'link'): ?>
+    <a class="button next-go" href="<?= e($next['href']) ?>">Go &rarr;</a>
+  <?php elseif ($next['type'] === 'post'): ?>
+    <form method="post" action="<?= e(base_url($next['action'])) ?>"><?= csrf_field() ?><input type="hidden" name="id" value="<?= e($project['id']) ?>"><button type="submit" class="next-go">Go &rarr;</button></form>
+  <?php endif; ?>
 </section>
 
-<section class="workflow-grid">
-  <article class="workflow-card">
-    <span class="workflow-step">1</span><h2>Source EPUB</h2>
-    <?php if (!$sourceAsset): ?>
-      <p>Upload and preserve the original EPUB.</p><?php if (!$archived): ?><a class="button" href="<?= e(base_url('epub-upload', ['id' => $project['id']])) ?>">Import EPUB</a><?php endif; ?>
-    <?php elseif (!$sourceAnalyzed): ?>
-      <p>The immutable EPUB is ready for metadata and spine analysis.</p><form method="post" action="<?= e(base_url('epub-analyze')) ?>"><?= csrf_field() ?><input type="hidden" name="id" value="<?= e($project['id']) ?>"><button type="submit">Analyze EPUB</button></form>
-    <?php else: ?>
-      <p>Source analysis is complete.</p><a class="button secondary" href="<?= e(base_url('source-sections', ['id' => $project['id']])) ?>">Review source sections</a>
-    <?php endif; ?>
-  </article>
+<div class="overview-layout">
+  <ol class="stepper" aria-label="Workflow">
+    <?php foreach ($flow['steps'] as $i => $step): ?>
+      <li class="step <?= e($step['state']) ?>">
+        <span class="step-num"><?= $step['state'] === 'done' ? '&#10003;' : $i + 1 ?></span>
+        <div class="step-body">
+          <h3><?= e($step['title']) ?></h3>
+          <p><?= e($step['summary']) ?></p>
+          <div class="step-actions"><?= $actions($step['key']) ?></div>
+        </div>
+      </li>
+    <?php endforeach; ?>
+  </ol>
 
-  <article class="workflow-card">
-    <span class="workflow-step">2</span><h2>Audiobook structure</h2>
-    <?php if (!$sourceAnalyzed): ?>
-      <p>Analyze the EPUB before building the audiobook structure.</p><button disabled>Edit audiobook structure</button>
-    <?php elseif ($logicalCount === 0): ?>
-      <p>Create logical chapters, group split chapter files, and choose included sections.</p><a class="button" href="<?= e($logicalUrl) ?>">Build audiobook structure</a>
-    <?php else: ?>
-      <p><?= number_format($logicalCount) ?> logical sections are ready for editing.</p><a class="button" href="<?= e($logicalUrl) ?>">Edit audiobook structure</a> <a class="button secondary" href="<?= e(base_url('chapters', ['id' => $project['id']])) ?>">Review chapters</a> <a class="button secondary" href="<?= e(base_url('rulesets', ['layer' => 'project', 'ref' => $project['id']])) ?>">Rulesets</a>
-    <?php endif; ?>
-  </article>
-
-  <article class="workflow-card generation-card">
-    <span class="workflow-step">3</span><h2>Generation settings</h2>
-    <form id="project-settings" data-endpoint="<?= e($settingsEndpoint) ?>" data-token="<?= e(Csrf::token()) ?>" data-project="<?= e($project['id']) ?>">
+  <aside class="overview-side">
+    <section class="side-card" id="settings">
+      <h2>Settings</h2>
+      <form id="project-settings" data-endpoint="<?= e($settingsEndpoint) ?>" data-token="<?= e(Csrf::token()) ?>" data-project="<?= e($project['id']) ?>">
       <label>Provider<input data-setting="provider" value="<?= e($providerValue) ?>" maxlength="100" required <?= $archived ? 'disabled' : '' ?>></label>
       <label>Voice<input data-setting="voice" list="kokoro-voices" value="<?= e($voiceValue) ?>" maxlength="100" placeholder="Example: am_michael" <?= $archived ? 'disabled' : '' ?>></label>
       <datalist id="kokoro-voices"><?php foreach (\App\Services\VoiceCatalog::all() as $voiceName): ?><option value="<?= e($voiceName) ?>"><?php endforeach; ?></datalist>
@@ -77,14 +106,28 @@ require APP_ROOT . '/app/Views/layout-top.php';
       <label>Audio quality <small>mono AAC (m4a, m4b)</small><select data-setting="bitrate" <?= $archived ? 'disabled' : '' ?>><?php foreach (\App\Services\AudioEncoder::BITRATES as $kbps => $label): ?><option value="<?= (int) $kbps ?>" <?= $bitrateValue === $kbps ? 'selected' : '' ?>><?= (int) $kbps ?> kbps, <?= e(strtolower($label)) ?></option><?php endforeach; ?></select></label>
       <?php if (!$archived): ?><div class="settings-actions"><span data-settings-state>All changes saved</span><button type="button" data-save-settings disabled>Save settings</button></div><?php endif; ?>
     </form>
-  </article>
-</section>
+    </section>
+
+    <section class="side-card">
+      <h2>Rulesets</h2>
+      <?php if ($flow['linked']): ?>
+        <ul class="side-list">
+          <?php foreach ($flow['linked'] as $set): ?>
+            <li><a href="<?= e(base_url('rulesets', ['layer' => 'set', 'ref' => $set['id']])) ?>"><?= e($set['name']) ?></a> <small><?= (int) $set['rules'] ?> rules</small></li>
+          <?php endforeach; ?>
+        </ul>
+      <?php else: ?><p class="muted">No shared rulesets linked.</p><?php endif; ?>
+      <p class="muted"><?= (int) $c['project_rules'] ?> rule<?= $c['project_rules'] === 1 ? '' : 's' ?> only for this book.</p>
+      <a class="button secondary" href="<?= e(base_url('rulesets', ['layer' => 'project', 'ref' => $project['id']])) ?>">Manage rulesets</a>
+    </section>
+  </aside>
+</div>
 
 <?php if ($sourceAsset): ?>
 <details class="panel source-technical"><summary>Project and source details</summary><div class="source-summary"><dl><div><dt>Project ID</dt><dd><code><?= e($project['id']) ?></code></dd></div><div><dt>Original filename</dt><dd><?= e($sourceAsset['original_name']) ?></dd></div><div><dt>Size</dt><dd><?= number_format((int) $sourceAsset['byte_size']) ?> bytes</dd></div><div><dt>ZIP entries</dt><dd><?= number_format((int) $sourceAsset['zip_entries']) ?></dd></div><div><dt>Imported</dt><dd><?= e($sourceAsset['imported_at']) ?> UTC</dd></div><div class="wide"><dt>SHA-256</dt><dd><code><?= e($sourceAsset['sha256']) ?></code></dd></div></dl></div></details>
 <?php endif; ?>
 
-<section class="danger-zone"><h2>Project lifecycle</h2><?php if (!$archived): ?><p>Archive this project to hide it from the active list. Project files are preserved.</p><form method="post" action="<?= e(base_url('project-archive')) ?>"><?= csrf_field() ?><input type="hidden" name="id" value="<?= e($project['id']) ?>"><button class="danger" type="submit">Archive project</button></form><?php else: ?><p>This project is archived. Restore it, or permanently delete it by entering its exact title.</p><form class="inline-form" method="post" action="<?= e(base_url('project-restore')) ?>"><?= csrf_field() ?><input type="hidden" name="id" value="<?= e($project['id']) ?>"><button type="submit">Restore project</button></form><form method="post" action="<?= e(base_url('project-delete')) ?>" onsubmit="return confirm('Permanently delete this project and its files?');"><?= csrf_field() ?><input type="hidden" name="id" value="<?= e($project['id']) ?>"><label>Type the exact title to permanently delete<input name="confirmation" required></label><button class="danger" type="submit">Permanently delete project</button></form><?php endif; ?></section>
+<details class="danger-fold"><summary>Project lifecycle: archive or delete</summary><?php if (!$archived): ?><p>Archive this project to hide it from the active list. Project files are preserved.</p><form method="post" action="<?= e(base_url('project-archive')) ?>"><?= csrf_field() ?><input type="hidden" name="id" value="<?= e($project['id']) ?>"><button class="danger" type="submit">Archive project</button></form><?php else: ?><p>This project is archived. Restore it, or permanently delete it by entering its exact title.</p><form class="inline-form" method="post" action="<?= e(base_url('project-restore')) ?>"><?= csrf_field() ?><input type="hidden" name="id" value="<?= e($project['id']) ?>"><button type="submit">Restore project</button></form><form method="post" action="<?= e(base_url('project-delete')) ?>" onsubmit="return confirm('Permanently delete this project and its files?');"><?= csrf_field() ?><input type="hidden" name="id" value="<?= e($project['id']) ?>"><label>Type the exact title to permanently delete<input name="confirmation" required></label><button class="danger" type="submit">Permanently delete project</button></form><?php endif; ?></details>
 
 <div class="toast-region" aria-live="polite" aria-atomic="true" data-project-toast></div>
 <?php if (!$archived): ?><script src="<?= e(base_url('assets/js/phase2c4.js')) ?>" defer></script><?php endif; ?>

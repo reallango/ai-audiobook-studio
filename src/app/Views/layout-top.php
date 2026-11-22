@@ -76,7 +76,7 @@ $currentNav = match (true) {
       <div class="project-shell-title">
         <a class="crumb" href="<?= e(base_url()) ?>">Projects</a><span class="crumb-sep">/</span>
         <a class="project-name" href="<?= e(base_url('project', ['id' => $shellProject['id']])) ?>"><?= e((string) $shellProject['title']) ?></a>
-        <?php if (!empty($shellProject['status'])): ?><span class="badge status-<?= e(strtolower((string) $shellProject['status'])) ?>"><?= e(str_replace('_', ' ', (string) $shellProject['status'])) ?></span><?php endif; ?>
+        <?php if (($shellProject['status'] ?? '') === 'ARCHIVED'): ?><span class="badge status-<?= e(strtolower((string) $shellProject['status'])) ?>"><?= e(str_replace('_', ' ', (string) $shellProject['status'])) ?></span><?php endif; ?>
       </div>
       <nav class="project-tabs" aria-label="Project">
         <?php foreach ([

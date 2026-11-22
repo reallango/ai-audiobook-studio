@@ -46,7 +46,7 @@ $totalMs = array_sum(array_map(static fn (array $a): int => (int) ($a['duration_
     <?php if (!$workerOnline): ?><p class="muted">The background worker has not been seen recently; queued chapters wait until it is running.</p><?php endif; ?>
   <?php endif; ?>
   <?php if ($readyCount > 0): ?>
-  <section class="export-panel">
+  <section class="export-panel" id="export">
     <h2>Audiobook files</h2>
     <p class="muted">Each chapter is AAC mono at <b><?= (int) $project['audio_bitrate_kbps'] ?> kbps</b> (change it in the project settings). <?= (int) $readyCount ?> of <?= count($rows) ?> chapters have finished audio. The m4b joins the finished chapters, in order, with a chapter marker for each.</p>
     <div class="export-actions">
