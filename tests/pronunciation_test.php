@@ -77,6 +77,21 @@ $tmp = $svc->withTemporary($svc->effective(null, null), [['pattern' => 'Qonos', 
 check('temporary rules apply but are not saved', [$svc->apply('Qonos', $tmp)['text'], $svc->apply('Qonos', $svc->effective(null, null))['text']], ['Kah-nos', 'Qonos']);
 check('temporary rules win over saved ones', $svc->apply('Sisko', $svc->withTemporary($svc->effective(null, null), [['pattern' => 'Sisko', 'replacement' => 'Sis-koh']]))['text'], 'Sis-koh');
 
+// a rule for a word also covers its possessive
+$svc->save('default', '', 'Kira', 'Keer-ah');
+check('a rule covers the possessive', $spoken(null, null, "Kira's and KIRA'S and Kira’s office"), "Keer-ah's and Keer-ah's and Keer-ah's office");
+check('and not words that merely start with it', $spoken(null, null, 'Kirana'), 'Kirana');
+$svc->save('default', '', "Kira's", "Keer-ah-s");
+check('a separate rule for the possessive wins over the derived one at the same layer', $spoken(null, null, "Kira's"), 'Keer-ah-s');
+$svc->save('project', 'p1', 'Kira', 'Kear-a');
+check('a higher layer rule for the word beats a lower layer rule for the possessive', $spoken('p1', null, "Kira's"), "Kear-a's");
+$svc->save('project', 'p1', 'Odo', 'Oh-doh', false, false);
+check('a rule that matches inside words gets no possessive', $spoken('p1', null, "Odo's"), "Oh-doh's");
+$pron2 = $svc->apply("DEEP SPACE 9'S LEGENDARY CAPTAIN,AND BAJOR'S EMISSARY", $svc->effective(null, null));
+check('digit possessives, the ALL-CAPS step and an existing Bajor rule', $pron2['text'], "Deep Space 9's Legendary Captain,And Bay-jor's Emissary");
+$svc->save('default', '', 'Bajor', 'Bay-jor');
+check('the reported line with a plain Bajor rule and no project', $svc->apply("THE UNIQUE CAREER OF DEEP SPACE 9'S LEGENDARY CAPTAIN,AND BAJOR'S EMISSARY", $svc->effective(null, null))['text'], "The Unique Career Of Deep Space 9's Legendary Captain,And Bay-jor's Emissary");
+
 // import
 check('import count', $svc->importMap('project', 'p2', ['Quark' => 'Kwork', 'Odo' => 'Oh-doh']), 2);
 check('json map decoding rejects lists', (function (): string { try { PronunciationService::decodeJsonMap('["a"]'); return 'accepted'; } catch (InvalidArgumentException $e) { return 'rejected'; } })(), 'rejected');

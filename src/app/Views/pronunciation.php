@@ -44,7 +44,7 @@ $explain = [
 <div class="review-layout">
 <div class="review-main">
 <section class="form-panel pron-panel">
-  <p class="pron-explain"><?= e($explain[$layer]) ?></p>
+  <p class="pron-explain"><?= e($explain[$layer]) ?> A rule for a word also covers its possessive (Bajor and Bajor's) and any capitalisation, unless you add a separate rule for the possessive.</p>
 
   <?php if ($layer === 'voice'): ?>
     <form method="get" action="<?= e(base_url('pronunciation')) ?>" class="pron-picker">

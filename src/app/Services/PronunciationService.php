@@ -170,14 +170,17 @@ final class PronunciationService
             $layers[] = ['project', $projectId, 'Project'];
         }
         $effective = [];
-        foreach ($layers as [$scope, $ref, $label]) {
+        foreach ($layers as $rank => [$scope, $ref, $label]) {
             foreach ($this->rules($scope, $ref) as $rule) {
                 $key = mb_strtolower((string) $rule['pattern']);
                 if ((int) $rule['enabled'] !== 1) {
                     unset($effective[$key]);        // a disabled rule switches off the same pattern from lower layers
                     continue;
                 }
-                $effective[$key] = $rule + ['layer' => $scope, 'layer_label' => $label];
+                // A rule for a word also decides its possessive, over a LOWER layer's separate rule for "word's".
+                $possessive = $key . "'s";
+                if (isset($effective[$possessive]) && $effective[$possessive]['rank'] < $rank) unset($effective[$possessive]);
+                $effective[$key] = $rule + ['layer' => $scope, 'layer_label' => $label, 'rank' => $rank];
             }
         }
         return $effective;
@@ -205,12 +208,16 @@ final class PronunciationService
         foreach ($rules as $rule) {
             $body = preg_quote((string) $rule['pattern'], '/');
             if ((int) $rule['case_sensitive'] !== 1) $body = '(?i:' . $body . ')';
-            if ((int) $rule['whole_word'] === 1) $body = '(?<![\p{L}\p{N}_\'])' . $body . '(?![\p{L}\p{N}_\'])';
+            // A whole-word rule also covers the possessive: a rule for Bajor handles Bajor's and BAJOR'S too.
+            if ((int) $rule['whole_word'] === 1) $body = '(?<![\p{L}\p{N}_\'])' . $body . '(?:\'[sS])?(?![\p{L}\p{N}_\'])';
             $parts[] = $body;
             $byKey[mb_strtolower((string) $rule['pattern'])] = $rule;
         }
         // Last alternative, so any rule wins over it: an ALL-CAPS word that no rule covers (Kokoro would spell it out).
-        if ($normalizeCaps) $parts[] = '(?<caps>' . self::CAPS_TOKEN . ')';
+        if ($normalizeCaps) {
+            $parts[] = '(?<caps>' . self::CAPS_TOKEN . ')';
+            $parts[] = '(?<poss>(?<![\p{L}\p{N}_\'])\p{N}+\'S(?![\p{L}\p{N}_\']))';        // 9'S -> 9's
+        }
 
         $hits = [];
         $pieces = [];
@@ -227,10 +234,20 @@ final class PronunciationService
                     $pieces[] = ['src' => $matched, 'src_start' => $offset, 'out' => $normal, 'kind' => 'caps', 'rule' => $matched, 'scope' => '', 'scope_ref' => '', 'label' => 'ALL-CAPS word'];
                     continue;
                 }
+                if (isset($m['poss']) && $m['poss'][0] !== '') {
+                    $pieces[] = ['src' => $matched, 'src_start' => $offset, 'out' => substr($matched, 0, -1) . 's', 'kind' => 'caps', 'rule' => $matched, 'scope' => '', 'scope_ref' => '', 'label' => "ALL-CAPS 's"];
+                    continue;
+                }
                 $rule = $byKey[mb_strtolower($matched)] ?? null;
-                if ($rule === null || (string) $rule['replacement'] === $matched) { $pieces[] = self::plainPiece($matched, $offset); continue; }
+                $suffix = '';
+                if ($rule === null && preg_match('/^(.+)\'[sS]$/u', $matched, $sm)) {      // the possessive of a word that has a rule
+                    $base = $byKey[mb_strtolower($sm[1])] ?? null;
+                    if ($base !== null && (int) $base['whole_word'] === 1) { $rule = $base; $suffix = "'s"; }
+                }
+                $replacement = $rule === null ? '' : (string) $rule['replacement'] . $suffix;
+                if ($rule === null || $replacement === $matched) { $pieces[] = self::plainPiece($matched, $offset); continue; }
                 $hits[$rule['pattern']] = ($hits[$rule['pattern']] ?? 0) + 1;
-                $pieces[] = ['src' => $matched, 'src_start' => $offset, 'out' => (string) $rule['replacement'], 'kind' => 'rule', 'rule' => (string) $rule['pattern'],
+                $pieces[] = ['src' => $matched, 'src_start' => $offset, 'out' => $replacement, 'kind' => 'rule', 'rule' => (string) $rule['pattern'],
                     'scope' => (string) ($rule['scope'] ?? ($rule['layer'] ?? '')), 'scope_ref' => (string) ($rule['scope_ref'] ?? ''), 'label' => (string) ($rule['layer_label'] ?? '')];
             }
         }
