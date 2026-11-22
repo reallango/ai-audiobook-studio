@@ -186,13 +186,17 @@ final class PronunciationService
     /**
      * Rewrites text with the effective rules. Matching is one pass, longest pattern first, so a spoken form is never
      * rewritten again. Curly apostrophes are treated as straight ones.
+     *
+     * Besides the result and the rules that fired, it returns the text as pieces (what was written, what is spoken,
+     * and why), which is how the chapter page marks the places where the text changed.
+     *
      * @param array<string,array<string,mixed>> $effective
-     * @return array{text:string,hits:array<string,int>}
+     * @return array{text:string,hits:array<string,int>,pieces:array<int,array<string,mixed>>}
      */
     public function apply(string $text, array $effective, bool $normalizeCaps = true): array
     {
         $text = str_replace(["\u{2019}", "\u{2018}"], "'", $text);
-        if ($effective === [] && !$normalizeCaps) return ['text' => $text, 'hits' => []];
+        if ($effective === [] && !$normalizeCaps) return ['text' => $text, 'hits' => [], 'pieces' => $text === '' ? [] : [self::plainPiece($text, 0)]];
         $rules = array_values($effective);
         usort($rules, static fn (array $a, array $b): int => mb_strlen((string) $b['pattern']) <=> mb_strlen((string) $a['pattern']));
 
@@ -207,20 +211,37 @@ final class PronunciationService
         }
         // Last alternative, so any rule wins over it: an ALL-CAPS word that no rule covers (Kokoro would spell it out).
         if ($normalizeCaps) $parts[] = '(?<caps>' . self::CAPS_TOKEN . ')';
+
         $hits = [];
-        $out = preg_replace_callback('/' . implode('|', $parts) . '/u', static function (array $m) use ($byKey, &$hits): string {
-            if (isset($m['caps']) && $m['caps'] !== '') {
-                $normal = self::normalCase($m['caps']);
-                if ($normal === null) return $m[0];
-                $hits['[caps] ' . $m['caps']] = ($hits['[caps] ' . $m['caps']] ?? 0) + 1;
-                return $normal;
+        $pieces = [];
+        $pos = 0;
+        if (preg_match_all('/' . implode('|', $parts) . '/u', $text, $all, PREG_SET_ORDER | PREG_OFFSET_CAPTURE)) {
+            foreach ($all as $m) {
+                [$matched, $offset] = $m[0];
+                if ($offset > $pos) $pieces[] = self::plainPiece(substr($text, $pos, $offset - $pos), $pos);
+                $pos = $offset + strlen($matched);
+                if (isset($m['caps']) && $m['caps'][0] !== '') {
+                    $normal = self::normalCase($matched);
+                    if ($normal === null || $normal === $matched) { $pieces[] = self::plainPiece($matched, $offset); continue; }
+                    $hits['[caps] ' . $matched] = ($hits['[caps] ' . $matched] ?? 0) + 1;
+                    $pieces[] = ['src' => $matched, 'src_start' => $offset, 'out' => $normal, 'kind' => 'caps', 'rule' => $matched, 'scope' => '', 'scope_ref' => '', 'label' => 'ALL-CAPS word'];
+                    continue;
+                }
+                $rule = $byKey[mb_strtolower($matched)] ?? null;
+                if ($rule === null || (string) $rule['replacement'] === $matched) { $pieces[] = self::plainPiece($matched, $offset); continue; }
+                $hits[$rule['pattern']] = ($hits[$rule['pattern']] ?? 0) + 1;
+                $pieces[] = ['src' => $matched, 'src_start' => $offset, 'out' => (string) $rule['replacement'], 'kind' => 'rule', 'rule' => (string) $rule['pattern'],
+                    'scope' => (string) ($rule['scope'] ?? ($rule['layer'] ?? '')), 'scope_ref' => (string) ($rule['scope_ref'] ?? ''), 'label' => (string) ($rule['layer_label'] ?? '')];
             }
-            $rule = $byKey[mb_strtolower($m[0])] ?? null;
-            if ($rule === null) return $m[0];
-            $hits[$rule['pattern']] = ($hits[$rule['pattern']] ?? 0) + 1;
-            return (string) $rule['replacement'];
-        }, $text);
-        return ['text' => $out ?? $text, 'hits' => $hits];
+        }
+        if ($pos < strlen($text)) $pieces[] = self::plainPiece(substr($text, $pos), $pos);
+        return ['text' => implode('', array_column($pieces, 'out')), 'hits' => $hits, 'pieces' => $pieces];
+    }
+
+    /** @return array<string,mixed> */
+    public static function plainPiece(string $text, int $start): array
+    {
+        return ['src' => $text, 'src_start' => $start, 'out' => $text, 'kind' => 'plain', 'rule' => '', 'scope' => '', 'scope_ref' => '', 'label' => ''];
     }
 
     /** An ALL-CAPS word: capitals and digits, optionally joined by apostrophes or hyphens (STARBASE, WASN'T, NCC-1701). */

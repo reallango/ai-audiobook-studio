@@ -22,7 +22,7 @@ final class App
     public static function run(): void
     {
         $route=trim((string)($_GET['page']??'projects'),'/');
-        try{match($route){'api-health'=>self::json(self::health()),'diagnostics'=>self::view('diagnostics'),'projects','home',''=>self::projects(),'project-create'=>self::createProject(),'project'=>self::project(),'epub-upload'=>self::epubUpload(),'epub-analyze'=>self::epubAnalyze(),'source-sections'=>self::sourceSections(),'source-section'=>self::sourceSection(),'project-archive'=>self::archiveProject(),'project-restore'=>self::restoreProject(),'project-delete'=>self::deleteProject(),'voice-lab'=>self::voiceLab(),'voice-preview'=>self::voicePreview(),'pronunciation'=>self::pronunciation(),'pronunciation-rule'=>self::pronunciationRule(),'chapters'=>self::chapters(),'chapter-review'=>self::chapterReview(),'chapter-audio'=>self::chapterAudio(),'audio'=>self::audio(),'export'=>self::export(),default=>self::notFound()};}
+        try{match($route){'api-health'=>self::json(self::health()),'diagnostics'=>self::view('diagnostics'),'projects','home',''=>self::projects(),'project-create'=>self::createProject(),'project'=>self::project(),'epub-upload'=>self::epubUpload(),'epub-analyze'=>self::epubAnalyze(),'source-sections'=>self::sourceSections(),'source-section'=>self::sourceSection(),'project-archive'=>self::archiveProject(),'project-restore'=>self::restoreProject(),'project-delete'=>self::deleteProject(),'voice-lab'=>self::voiceLab(),'voice-preview'=>self::voicePreview(),'pronunciation'=>self::pronunciation(),'pronunciation-rule'=>self::pronunciationRule(),'chapters'=>self::chapters(),'chapter-review'=>self::chapterReview(),'chapter-audio'=>self::chapterAudio(),'chapter-text'=>self::chapterText(),'audio'=>self::audio(),'export'=>self::export(),default=>self::notFound()};}
         catch(Throwable $error){error_log($error->__toString());http_response_code(500);self::view('error',['message'=>config('app.debug',false)?$error->getMessage():'The request could not be completed. Check the application log for details.']);}
     }
     private static function voiceLab():void
@@ -384,6 +384,36 @@ final class App
         } catch (Throwable $error) {
             error_log($error->__toString());
             $fail(500, config('app.debug', false) ? $error->getMessage() : 'The step failed. Check the application log.');
+        }
+    }
+
+    /** POST JSON {_token, project_id, section, block_id, action: save_paragraph|reset_paragraph|skip, text?, excluded?} -> JSON. */
+    private static function chapterText():void
+    {
+        $fail = static function (int $status, string $message): void { self::json(['ok' => false, 'message' => $message], $status); };
+        if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') { header('Allow: POST'); $fail(405, 'POST is required.'); return; }
+        $p = json_decode((string) file_get_contents('php://input'), true);
+        if (!is_array($p)) { $fail(400, 'The request was not valid JSON.'); return; }
+        if (!Csrf::validate(isset($p['_token']) ? (string) $p['_token'] : null)) { $fail(419, 'Security token expired. Reload the page.'); return; }
+        $project = (new ProjectRepository())->find((string) ($p['project_id'] ?? ''));
+        if (!$project) { $fail(404, 'Project not found.'); return; }
+        if ($project['status'] === 'ARCHIVED') { $fail(422, 'Restore the project before editing chapters.'); return; }
+        $narration = new NarrationService();
+        $section = (string) ($p['section'] ?? '');
+        $block = (string) ($p['block_id'] ?? '');
+        try {
+            switch ((string) ($p['action'] ?? '')) {
+                case 'save_paragraph': $narration->saveParagraphText((string) $project['id'], $section, $block, (string) ($p['text'] ?? '')); break;
+                case 'reset_paragraph': $narration->resetParagraph((string) $project['id'], $section, $block); break;
+                case 'skip': $narration->setExcluded((string) $project['id'], $section, $block, !empty($p['excluded'])); break;
+                default: $fail(422, 'Unknown action.'); return;
+            }
+            self::json(['ok' => true]);
+        } catch (\InvalidArgumentException $error) {
+            $fail(422, $error->getMessage());
+        } catch (Throwable $error) {
+            error_log($error->__toString());
+            $fail(500, 'The change could not be saved.');
         }
     }
 

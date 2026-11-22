@@ -19,6 +19,7 @@ final class NarrationService
     public static function clean(string $text): string
     {
         $text = str_replace(["\u{00A0}", "\u{202F}", "\u{2009}"], ' ', $text);
+        $text = str_replace(["\u{2019}", "\u{2018}"], "'", $text);
         $text = preg_replace('/[\x{00AD}\x{200B}\x{200C}\x{200D}\x{FEFF}]/u', '', $text) ?? $text;
         $text = preg_replace('/\s+/u', ' ', $text) ?? $text;
         return trim($text);
@@ -51,26 +52,35 @@ final class NarrationService
         $pron = new PronunciationService();
         $effective = $pron->effective($projectId, $voice);
 
-        $edits = [];
+        $blockRows = [];
         $s = $this->db()->prepare('SELECT * FROM narration_blocks WHERE logical_section_id=:id');
         $s->execute(['id' => $logicalId]);
-        foreach ($s->fetchAll() as $row) $edits[$row['source_block_id']] = $row;
+        foreach ($s->fetchAll() as $row) $blockRows[$row['source_block_id']] = $row;
+        $editRows = [];
+        $q = $this->db()->prepare('SELECT * FROM narration_edits WHERE logical_section_id=:id ORDER BY src_start');
+        $q->execute(['id' => $logicalId]);
+        foreach ($q->fetchAll() as $row) $editRows[$row['source_block_id']][] = $row;
 
+        $caps = (int) ($project['normalize_caps'] ?? 1) === 1;
         $items = [];
         $paragraphs = [];
         $words = 0;
         foreach ((new LogicalSectionRepository())->blocks($logicalId) as $block) {
             $source = (string) $block['source_text'];
             $cleaned = self::clean($source);
-            $applied = $pron->apply($cleaned, $effective, (int) ($project['normalize_caps'] ?? 1) === 1);
-            $edit = $edits[$block['id']] ?? null;
-            $excluded = $edit !== null && (int) $edit['excluded'] === 1;
-            $override = $edit !== null && $edit['override_text'] !== null ? (string) $edit['override_text'] : null;
-            $narration = $override ?? $applied['text'];
+            $built = ParagraphEdits::build($pron, $effective, $cleaned, $caps, $editRows[$block['id']] ?? []);
+            $row = $blockRows[$block['id']] ?? null;
+            $excluded = $row !== null && (int) $row['excluded'] === 1;
+            $override = $row !== null && $row['override_text'] !== null ? (string) $row['override_text'] : null;
+            $narration = $override ?? $built['text'];
             $items[] = [
                 'id' => (string) $block['id'], 'type' => (string) $block['block_type'], 'source' => $source, 'cleaned' => $cleaned,
-                'narration' => $narration, 'computed' => $applied['text'], 'hits' => $applied['hits'], 'excluded' => $excluded,
+                'narration' => $narration, 'computed' => $built['text'], 'hits' => $built['hits'], 'excluded' => $excluded,
                 'overridden' => $override !== null,
+                'pieces' => $override !== null
+                    ? [['src' => $cleaned, 'src_start' => 0, 'out' => $override, 'kind' => 'edit', 'rule' => '', 'scope' => '', 'scope_ref' => '', 'label' => 'Your edit']]
+                    : $built['pieces'],
+                'edits' => $built['edits'], 'edit_count' => count($built['edits']), 'stale' => $built['stale'],
             ];
             if (!$excluded && trim($narration) !== '') {
                 $paragraphs[] = $narration;
@@ -88,7 +98,7 @@ final class NarrationService
 
         return [
             'section' => $section, 'voice' => $voice, 'items' => $items, 'text' => $text, 'hash' => $hash,
-            'words' => $words, 'approval' => $approval, 'status' => $status,
+            'words' => $words, 'approval' => $approval, 'status' => $status, 'announced' => $announce ? $title : null,
         ];
     }
 
@@ -105,7 +115,7 @@ final class NarrationService
             $rows[] = [
                 'id' => (string) $section['id'], 'position' => (int) $section['position'], 'title' => (string) $section['title'],
                 'words' => $chapter['words'], 'status' => $chapter['status'], 'text' => $chapter['text'],
-                'edited' => count(array_filter($chapter['items'], static fn (array $i): bool => $i['overridden'] || $i['excluded'])),
+                'edited' => count(array_filter($chapter['items'], static fn (array $i): bool => $i['overridden'] || $i['excluded'] || $i['edit_count'] > 0)),
             ];
         }
         return $rows;
@@ -124,6 +134,50 @@ final class NarrationService
             foreach ($repo->blocks((string) $section['id']) as $block) $texts[] = self::clean((string) $block['source_text']);
         }
         return $texts;
+    }
+
+    /**
+     * Saves what the user typed for one paragraph. The changed words are stored as edits to the source words behind
+     * them, so later changes to other rules still apply around the edit. Empty text skips the paragraph.
+     */
+    public function saveParagraphText(string $projectId, string $logicalId, string $blockId, string $text): void
+    {
+        $this->assertBlock($projectId, $logicalId, $blockId);
+        $typed = trim((string) preg_replace('/\s+/u', ' ', self::clean($text)));
+        if (mb_strlen($typed) > self::MAX_OVERRIDE_CHARS) throw new InvalidArgumentException('That text is too long for one paragraph.');
+        if ($typed === '') {
+            $this->setExcluded($projectId, $logicalId, $blockId, true);
+            return;
+        }
+        $this->db()->prepare('UPDATE narration_blocks SET override_text=NULL WHERE logical_section_id=:l AND source_block_id=:b')->execute(['l' => $logicalId, 'b' => $blockId]);
+        $item = $this->item($projectId, $logicalId, $blockId);
+        if ($typed === $item['narration']) return;
+        $edits = ParagraphEdits::diff($item['cleaned'], $item['pieces'], $item['narration'], $typed, $item['edits']);
+        $db = $this->db();
+        $db->beginTransaction();
+        $db->prepare('DELETE FROM narration_edits WHERE logical_section_id=:l AND source_block_id=:b')->execute(['l' => $logicalId, 'b' => $blockId]);
+        $insert = $db->prepare('INSERT INTO narration_edits(logical_section_id,source_block_id,src_start,src_len,src,dst) VALUES(:l,:b,:s,:n,:src,:dst)');
+        foreach ($edits as $e) $insert->execute(['l' => $logicalId, 'b' => $blockId, 's' => $e['start'], 'n' => $e['len'], 'src' => $e['src'], 'dst' => $e['dst']]);
+        $db->commit();
+        $this->prune($logicalId, $blockId);
+    }
+
+    /** Removes every hand edit of a paragraph, so the rules alone decide its narration. */
+    public function resetParagraph(string $projectId, string $logicalId, string $blockId): void
+    {
+        $this->assertBlock($projectId, $logicalId, $blockId);
+        $this->db()->prepare('DELETE FROM narration_edits WHERE logical_section_id=:l AND source_block_id=:b')->execute(['l' => $logicalId, 'b' => $blockId]);
+        $this->db()->prepare('UPDATE narration_blocks SET override_text=NULL WHERE logical_section_id=:l AND source_block_id=:b')->execute(['l' => $logicalId, 'b' => $blockId]);
+        $this->prune($logicalId, $blockId);
+    }
+
+    /** @return array<string,mixed> */
+    private function item(string $projectId, string $logicalId, string $blockId): array
+    {
+        foreach ($this->chapter($projectId, $logicalId)['items'] as $item) {
+            if ($item['id'] === $blockId) return $item;
+        }
+        throw new InvalidArgumentException('That block is not part of this chapter.');
     }
 
     public function setExcluded(string $projectId, string $logicalId, string $blockId, bool $excluded): void

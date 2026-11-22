@@ -164,6 +164,43 @@ code { font-size: .88em; background: var(--surface2); padding: .08em .35em; bord
 .review-full { margin: 0 0 14px; }
 .review-full summary { cursor: pointer; color: var(--muted); }
 
+.audio-fold { border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); margin: 0 0 16px; }
+.audio-fold > summary { cursor: pointer; padding: 10px 16px; font-weight: 700; list-style-position: inside; }
+.audio-fold > summary small { font-weight: 400; color: var(--muted); }
+.audio-fold > .audio-panel { border: 0; border-top: 1px solid var(--line); border-radius: 0 0 var(--radius) var(--radius); margin: 0; background: transparent; }
+.audio-fold .audio-panel h2 { display: none; }
+
+/* ---------- the chapter as a book ---------- */
+.legend { color: var(--muted); font-size: .9rem; margin: 0 0 14px; line-height: 1.8; }
+.announce { color: var(--muted); font-size: .9rem; margin: 0 0 6px; }
+.book { max-width: 44rem; margin: 0 auto; padding: 8px 4px 40px; font-family: Georgia, "Iowan Old Style", "Palatino Linotype", serif; font-size: 1.12rem; line-height: 1.8; }
+.para { position: relative; padding: 2px 10px 2px 12px; margin: 0 0 .35rem; border-left: 3px solid transparent; border-radius: 4px; }
+.para:hover, .para:focus-within, .para.focus, .para.editing { border-left-color: var(--line); background: color-mix(in srgb, var(--surface) 55%, transparent); }
+.para.focus { border-left-color: var(--accent); }
+.para-text { margin: 0; }
+.para-text.is-heading { font-size: 1.35rem; line-height: 1.35; margin: 1.2rem 0 .4rem; font-weight: 700; }
+.para.skipped .para-text { opacity: .4; text-decoration: line-through; }
+.para-bar { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; min-height: 1.6rem; margin: 0; font-family: Inter, ui-sans-serif, system-ui, sans-serif; font-size: .8rem; opacity: 0; transition: opacity .12s; }
+.para:hover .para-bar, .para:focus-within .para-bar, .para.editing .para-bar, .para.focus .para-bar, .para.skipped .para-bar { opacity: 1; }
+@media (hover: none) { .para-bar { opacity: 1; } }
+.para.editing .para-bar { display: none; }
+.para-note { color: var(--muted); font-size: .8rem; margin: 0; }
+.para-note.warn { color: var(--warn); }
+.para-bar .link-button { font-size: .8rem; }
+mark.chg { background: transparent; color: inherit; border-radius: 3px; padding: 0 1px; cursor: pointer; text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 4px; }
+mark.chg.rule { text-decoration-color: #f3bd60; background: color-mix(in srgb, #f3bd60 14%, transparent); }
+mark.chg.caps { text-decoration-color: #62b4ff; background: color-mix(in srgb, #62b4ff 12%, transparent); }
+mark.chg.edit { text-decoration-color: #4bd39b; background: color-mix(in srgb, #4bd39b 14%, transparent); }
+mark.chg.removed { text-decoration: none; opacity: .75; }
+mark.chg.removed s { text-decoration-thickness: 2px; text-decoration-color: #f3bd60; }
+mark.chg:hover, mark.chg:focus-visible { filter: brightness(1.25); outline: none; box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 55%, transparent); }
+.legend mark.chg { cursor: default; padding: 0 4px; font-family: Inter, ui-sans-serif, system-ui, sans-serif; font-size: .85rem; }
+.para.editing .para-text { outline: 2px solid var(--accent); outline-offset: 4px; border-radius: 4px; background: var(--bg); padding: 2px 6px; white-space: pre-wrap; }
+.edit-bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 8px 0 4px; font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
+.edit-bar small { flex-basis: 100%; }
+.wb-from { margin: 0 0 6px; color: var(--accent2); font-size: .85rem; min-height: 1.2em; }
+.wb-text { display: grid; gap: 4px; font-size: .86rem; font-weight: 600; }
+
 /* ---------- pronunciation, voice lab ---------- */
 .pron-tabs a { padding: 6px 14px; font-size: .92rem; }
 .pron-panel, .voice-lab { margin-top: 0; margin-bottom: 16px; }
