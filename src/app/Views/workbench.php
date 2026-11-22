@@ -19,8 +19,11 @@ $wbProject ??= null;
       <label>Spoken <input data-wb-spoken maxlength="200" placeholder="Bay-jor"></label>
     </div>
     <label class="wb-text">Sentence to hear <textarea data-wb-text rows="3" maxlength="3000" placeholder="Pick a word, or type a sentence"></textarea></label>
-    <div class="wb-row">
-      <button type="button" class="button secondary" data-wb-example title="Fill in a sentence from the book that contains the written word">Find it in the book</button>
+    <div class="wb-row wb-examples">
+      <button type="button" class="button secondary" data-wb-prev title="Previous example from the book" aria-label="Previous example">&larr;</button>
+      <span class="wb-count" data-wb-count>no example yet</span>
+      <button type="button" class="button secondary" data-wb-next title="Next example from the book" aria-label="Next example">&rarr;</button>
+      <button type="button" class="button secondary" data-wb-example title="Find sentences in the book where this rule would apply">Find in the book</button>
     </div>
     <div class="wb-row wb-compare">
       <button type="button" class="button secondary" data-wb-hear-original title="The sentence exactly as the book spells it, with no rules">Hear as written</button>

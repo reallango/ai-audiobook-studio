@@ -152,8 +152,8 @@ final class App
     private static function pronunciationExample():void
     {
         $project = (string) ($_GET['project'] ?? '');
-        $sentence = (new NarrationService())->exampleSentence($project !== '' ? $project : null, (string) ($_GET['q'] ?? ''));
-        self::json(['ok' => true, 'sentence' => $sentence]);
+        $sentences = (new NarrationService())->exampleSentences($project !== '' ? $project : null, (string) ($_GET['q'] ?? ''), ($_GET['whole'] ?? '1') !== '0', ($_GET['case'] ?? '0') === '1');
+        self::json(['ok' => true, 'sentences' => $sentences, 'sentence' => $sentences[0] ?? null]);
     }
 
     /** POST JSON {_token, layer, ref, pattern, replacement, whole_word?, case_sensitive?, note?} -> saves one rule (used by the chapter workbench). */

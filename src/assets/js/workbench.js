@@ -28,22 +28,59 @@
   }
   const bookPost = body => post(book.dataset.endpoint, book.dataset.token, {project_id: book.dataset.project, section: book.dataset.section, ...body});
 
-  /** The sentence of the original paragraph that contains the words. */
+  let caseFlag = 0;                                   // 1 when the word must match in exactly this case (ALL-CAPS words, case-sensitive rules)
+  const escapeRe = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const wordRegex = needle => new RegExp(`(?<![\\p{L}\\p{N}_'])${escapeRe(needle)}(?:'[sS])?(?![\\p{L}\\p{N}_'])`, caseFlag ? 'u' : 'iu');
+
+  /** The sentence of the original paragraph in which the word stands as a word (not inside another word). */
   function sentenceOf(source, needle) {
     const sentences = source.split(/(?<=[.!?…]["')\]]*)\s+/);
-    const hit = sentences.find(s => needle && s.toLowerCase().includes(needle.toLowerCase()));
-    return (hit || source).slice(0, 600);
+    let hit = null;
+    try { const re = wordRegex(needle); hit = sentences.find(s => re.test(s)); } catch (error) { hit = null; }
+    return (hit || sentences.find(s => needle && s.toLowerCase().includes(needle.toLowerCase())) || source).slice(0, 600);
   }
 
-  async function exampleFor(word) {
-    if (!wb || !word) return '';
+  // ----- examples from the book: sentences where the rule would really apply, with previous and next -----
+  const countLabel = field('[data-wb-count]');
+  const prevButton = field('[data-wb-prev]');
+  const nextButton = field('[data-wb-next]');
+  let examples = {key: '', list: [], index: -1};
+
+  function showCount() {
+    if (!countLabel) return;
+    const n = examples.list.length;
+    countLabel.textContent = !examples.key ? 'no example yet' : (n === 0 ? 'not in the book' : (examples.index >= 0 ? `example ${examples.index + 1} of ${n}${n >= 60 ? '+' : ''}` : `${n}${n >= 60 ? '+' : ''} examples`));
+    if (prevButton) prevButton.disabled = n < 2;
+    if (nextButton) nextButton.disabled = n < 2;
+  }
+
+  async function loadExamples(word) {
+    if (!wb || !word) return [];
+    const key = `${word}|${whole && !whole.checked ? 0 : 1}|${caseFlag}`;
+    if (examples.key === key) return examples.list;
     try {
-      const url = `${wb.dataset.example}${wb.dataset.example.includes('?') ? '&' : '?'}project=${encodeURIComponent(wb.dataset.project || '')}&q=${encodeURIComponent(word)}`;
+      const base = wb.dataset.example;
+      const url = `${base}${base.includes('?') ? '&' : '?'}project=${encodeURIComponent(wb.dataset.project || '')}&q=${encodeURIComponent(word)}&whole=${whole && !whole.checked ? 0 : 1}&case=${caseFlag}`;
       const reply = await (await fetch(url, {credentials: 'same-origin'})).json();
-      return reply && reply.sentence ? reply.sentence : '';
+      examples = {key, list: Array.isArray(reply.sentences) ? reply.sentences : [], index: -1};
     } catch (error) {
-      return '';
+      examples = {key, list: [], index: -1};
     }
+    return examples.list;
+  }
+
+  async function stepExample(direction) {
+    const word = written.value.trim();
+    if (!word) { status.textContent = 'Fill in "Written" first.'; return; }
+    const list = await loadExamples(word);
+    if (!list.length) { showCount(); status.textContent = `No sentence in the book contains “${word}” as a word.`; return; }
+    const at = list.indexOf(text.value);
+    const index = at >= 0 ? (at + direction + list.length) % list.length : (direction > 0 ? 0 : list.length - 1);
+    examples.index = index;
+    text.value = list[index];
+    showCount();
+    status.textContent = '';
+    runHear(true);
   }
 
   /** Text to speech through the app. `rules` false sends the text exactly as given. */
@@ -55,19 +92,25 @@
   }
 
   /** Puts words into the panel; with no paragraph at hand it looks for a sentence in the book. */
-  async function load({source, para, shownSpoken, layerValue, label, autoHear}) {
+  async function load({source, para, shownSpoken, layerValue, label, autoHear, caseSensitive = false, wholeWord = true}) {
     if (!wb) return;
+    caseFlag = caseSensitive ? 1 : 0;
+    if (whole) whole.checked = wholeWord;
     written.value = source;
     spoken.value = shownSpoken;
     from.textContent = label ? `Now: ${label}.` : '';
     if (layerValue) [...layer.options].forEach(o => { if (o.value === layerValue) layer.value = layerValue; });
     status.textContent = '';
+    examples = {key: '', list: [], index: -1};
     if (para) {
       text.value = sentenceOf(para.dataset.source, source);
+      showCount();
     } else {
       status.textContent = 'Looking for a sentence in the book…';
-      text.value = (await exampleFor(source)) || source;
-      status.textContent = '';
+      const list = await loadExamples(source);
+      if (list.length) { examples.index = 0; text.value = list[0]; status.textContent = ''; }
+      else { text.value = source; status.textContent = `No sentence in the book contains “${source}” as a word, so only the word is played.`; }
+      showCount();
     }
     wb.scrollIntoView({block: 'nearest'});
     if (autoHear) runHear(true);
@@ -100,11 +143,17 @@
     hear.addEventListener('click', () => runHear(true));
     hearOriginal.addEventListener('click', () => runHear(false));
     findExample.addEventListener('click', async () => {
-      if (!written.value.trim()) { status.textContent = 'Fill in "Written" first.'; return; }
-      status.textContent = 'Looking for a sentence in the book…';
-      const sentence = await exampleFor(written.value.trim());
-      if (sentence) { text.value = sentence; status.textContent = ''; } else status.textContent = 'That word is not in the book.';
+      const word = written.value.trim();
+      if (!word) { status.textContent = 'Fill in "Written" first.'; return; }
+      status.textContent = 'Looking for sentences in the book…';
+      const list = await loadExamples(word);
+      if (list.length) { examples.index = 0; text.value = list[0]; status.textContent = ''; }
+      else status.textContent = `No sentence in the book contains “${word}” as a word.`;
+      showCount();
     });
+    if (prevButton) prevButton.addEventListener('click', () => stepExample(-1));
+    if (nextButton) nextButton.addEventListener('click', () => stepExample(1));
+    showCount();
     save.addEventListener('click', async () => {
       if (!written.value.trim()) { status.textContent = 'Fill in "Written" first.'; return; }
       if (spoken.value === '' && !confirm('The spoken form is empty. That removes this text from the narration. Save it anyway?')) return;
@@ -125,7 +174,8 @@
       const button = event.target.closest('[data-wb-load]');
       if (!button) return;
       event.preventDefault();
-      load({source: button.dataset.written, shownSpoken: button.dataset.spoken, layerValue: button.dataset.layer, label: button.dataset.label, autoHear: true});
+      load({source: button.dataset.written, shownSpoken: button.dataset.spoken, layerValue: button.dataset.layer, label: button.dataset.label, autoHear: true,
+        caseSensitive: button.dataset.case === '1', wholeWord: button.dataset.whole !== '0'});
     });
   }
 
@@ -138,7 +188,7 @@
     if (!mark || !wb) return;
     const selection = window.getSelection();
     if (selection && !selection.isCollapsed) return;       // a drag-selection is handled on mouseup
-    load({source: mark.dataset.src, para: mark.closest('.para'), shownSpoken: mark.dataset.out, layerValue: mark.dataset.layer || `project|${wb.dataset.project}`, label: mark.dataset.label, autoHear: true});
+    load({source: mark.dataset.src, para: mark.closest('.para'), shownSpoken: mark.dataset.out, layerValue: mark.dataset.layer || `project|${wb.dataset.project}`, label: mark.dataset.label, autoHear: true, caseSensitive: mark.dataset.kind === 'caps'});
   });
   book.addEventListener('keydown', event => {
     if (event.key === 'Enter' && event.target.matches && event.target.matches('mark.chg')) event.target.click();

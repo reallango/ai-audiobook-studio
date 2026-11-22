@@ -166,21 +166,35 @@ final class NarrationService
     /**
      * A sentence of the book that contains the word, to hear a rule in context. With no project, the most recent ones are searched.
      */
-    public function exampleSentence(?string $projectId, string $word): ?string
+    public function exampleSentence(?string $projectId, string $word, bool $wholeWord = true, bool $caseSensitive = false): ?string
     {
-        $word = trim($word);
-        if ($word === '' || mb_strlen($word) > 100) return null;
+        return $this->exampleSentences($projectId, $word, $wholeWord, $caseSensitive, 1)[0] ?? null;
+    }
+
+    /**
+     * Sentences of the book in which the rule would actually apply, in reading order: whole words only (a rule for "os"
+     * does not fire inside "most"), the possessive included, case as the rule says.
+     * @return string[]
+     */
+    public function exampleSentences(?string $projectId, string $word, bool $wholeWord = true, bool $caseSensitive = false, int $limit = 60): array
+    {
+        $word = trim(str_replace(["\u{2019}", "\u{2018}"], "'", $word));
+        if ($word === '' || mb_strlen($word) > 100) return [];
+        $body = preg_quote($word, '/');
+        $pattern = '/' . ($wholeWord ? '(?<![\p{L}\p{N}_\'])' . $body . '(?:\'[sS])?(?![\p{L}\p{N}_\'])' : $body) . '/u' . ($caseSensitive ? '' : 'i');
         $ids = $projectId !== null && $projectId !== '' ? [$projectId] : array_slice(array_column((new ProjectRepository())->all(false), 'id'), 0, 5);
+        $found = [];
         foreach ($ids as $id) {
             foreach ($this->sourceTexts((string) $id) as $paragraph) {
-                if (mb_stripos($paragraph, $word) === false) continue;
+                if (preg_match($pattern, $paragraph) !== 1) continue;
                 foreach (Segmenter::sentences($paragraph) as $sentence) {
-                    if (mb_stripos($sentence, $word) !== false) return mb_substr($sentence, 0, 600);
+                    if (preg_match($pattern, $sentence) !== 1) continue;
+                    $found[mb_substr($sentence, 0, 600)] = true;
+                    if (count($found) >= $limit) return array_keys($found);
                 }
-                return mb_substr($paragraph, 0, 600);
             }
         }
-        return null;
+        return array_keys($found);
     }
 
     /** Removes every hand edit of a paragraph, so the rules alone decide its narration. */

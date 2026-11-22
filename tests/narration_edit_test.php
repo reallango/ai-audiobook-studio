@@ -103,6 +103,12 @@ check('an edit after approval shows as changed', $narr->chapter('p', 'L')['statu
 check('an example sentence from the book contains the word', $narr->exampleSentence('p', 'bajor'), "Sisko's ship left Bajor.");
 check('without a project, recent projects are searched', $narr->exampleSentence(null, 'Bajor'), "Sisko's ship left Bajor.");
 check('a word that is not in the book has no example', [$narr->exampleSentence('p', 'Cardassia'), $narr->exampleSentence('p', '')], [null, null]);
+$pdo->exec("UPDATE source_blocks SET source_text='Most of the shops were closed. The OS was down. Sisko\u{2019}s os stayed on. Nothing to hear.' WHERE id='b1'");
+check('a whole-word rule only finds the whole word, not letters inside other words', $narr->exampleSentences('p', 'os'), ['The OS was down.', "Sisko's os stayed on."]);
+check('matching inside words is available for rules that do that', count($narr->exampleSentences('p', 'os', false)) >= 3, true);
+check('case-sensitive rules only find that case', [$narr->exampleSentences('p', 'OS', true, true), $narr->exampleSentences('p', 'os', true, true)], [['The OS was down.'], ["Sisko's os stayed on."]]);
+check('the possessive counts as the word', $narr->exampleSentences('p', 'Sisko'), ["Sisko's os stayed on."]);
+check('the limit is respected', count($narr->exampleSentences('p', 'os', true, false, 1)), 1);
 
 @unlink($db);
 echo $failures === 0 ? "\nall passed\n" : "\n$failures failed\n";

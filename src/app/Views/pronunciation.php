@@ -126,7 +126,7 @@ $explain = [
             <td><?= (int) $r['whole_word'] ? 'whole word' : 'anywhere' ?>, <?= (int) $r['case_sensitive'] ? 'match case' : 'any case' ?></td>
             <td><?= e($r['note']) ?></td>
             <td class="pron-actions">
-              <button type="button" class="link-button" data-wb-load data-written="<?= e((string) $r['pattern']) ?>" data-spoken="<?= e((string) $r['replacement']) ?>" data-layer="<?= e($layer . '|' . $ref) ?>" data-label="rule in this layer">try</button>
+              <button type="button" class="link-button" data-wb-load data-written="<?= e((string) $r['pattern']) ?>" data-spoken="<?= e((string) $r['replacement']) ?>" data-layer="<?= e($layer . '|' . $ref) ?>" data-label="rule in this layer" data-case="<?= (int) $r['case_sensitive'] ?>" data-whole="<?= (int) $r['whole_word'] ?>">try</button>
               <form method="post"><?= $hidden() ?><input type="hidden" name="action" value="toggle_rule"><input type="hidden" name="id" value="<?= (int) $r['id'] ?>"><input type="hidden" name="enabled" value="<?= (int) $r['enabled'] ? '0' : '1' ?>"><button type="submit" class="link-button"><?= (int) $r['enabled'] ? 'disable' : 'enable' ?></button></form>
               <form method="post"><?= $hidden() ?><input type="hidden" name="action" value="delete_rule"><input type="hidden" name="id" value="<?= (int) $r['id'] ?>"><button type="submit" class="link-button danger">delete</button></form>
             </td>
@@ -177,7 +177,7 @@ $explain = [
           <td><code><?= e($row['token']) ?></code></td>
           <td><?= (int) $row['count'] ?></td>
           <td><?= $row['becomes'] === null ? '<em>left as written (a rule decides)</em>' : ($capsOn ? '<code>' . e($row['becomes']) . '</code>' : '<em>spelled out</em>') ?></td>
-          <td><button type="button" class="link-button" data-wb-load data-written="<?= e($row['token']) ?>" data-spoken="<?= e($row['becomes'] ?? $row['token']) ?>" data-layer="project|<?= e($ref) ?>" data-label="ALL-CAPS word">try</button> <a href="<?= e(base_url('pronunciation', ['layer' => 'project', 'ref' => $ref, 'p' => $row['token'], 's' => $row['becomes'] ?? $row['token']])) ?>#add">make a rule</a></td>
+          <td><button type="button" class="link-button" data-wb-load data-written="<?= e($row['token']) ?>" data-spoken="<?= e($row['becomes'] ?? $row['token']) ?>" data-layer="project|<?= e($ref) ?>" data-label="ALL-CAPS word" data-case="1" data-whole="1">try</button> <a href="<?= e(base_url('pronunciation', ['layer' => 'project', 'ref' => $ref, 'p' => $row['token'], 's' => $row['becomes'] ?? $row['token']])) ?>#add">make a rule</a></td>
         </tr>
       <?php endforeach; ?>
       </tbody>

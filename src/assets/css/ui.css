@@ -198,6 +198,9 @@ mark.chg:hover, mark.chg:focus-visible { filter: brightness(1.25); outline: none
 .para.editing .para-text { outline: 2px solid var(--accent); outline-offset: 4px; border-radius: 4px; background: var(--bg); padding: 2px 6px; white-space: pre-wrap; }
 .edit-bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 8px 0 4px; font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
 .edit-bar small { flex-basis: 100%; }
+.wb-examples { align-items: center; gap: 6px; }
+.wb-examples .button { padding: 6px 10px; }
+.wb-count { flex: 1; text-align: center; font-size: .82rem; color: var(--muted); min-width: 6rem; }
 .wb-from { margin: 0 0 6px; color: var(--accent2); font-size: .85rem; min-height: 1.2em; }
 .wb-text { display: grid; gap: 4px; font-size: .86rem; font-weight: 600; }
 
