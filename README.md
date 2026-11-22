@@ -2,7 +2,7 @@
 
 A single-container web app that turns EPUB books into audiobooks using a Kokoro TTS server. Books are projects: import, build chapters, set voice and pronunciation, review and approve the narration text, generate audio, and regenerate only what changed.
 
-Status: 0.0.1. Import, chapter building, layered pronunciation, narration review, background audio generation (WAV per chapter). See `PLAN.md` for what is done and what is open.
+Status: 0.0.1. Import, chapter building, layered pronunciation, narration review as a book with in-place edits, background generation, AAC mono chapters, chaptered M4B and ZIP export. See `PLAN.md`.
 
 ## How it works
 - **Source stays untouched.** The EPUB is stored and hashed. Chapter text is computed from it in layers: cleaned, pronunciation rules applied, then your per-paragraph edits.
