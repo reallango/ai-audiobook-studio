@@ -47,6 +47,19 @@ check('and without it the set does not apply', $svc->apply('Worf', $svc->effecti
 check('an unknown set id is ignored', $svc->apply('Worf', $svc->effective(null, null, ['nope']))['text'], 'Worf');
 check('a set that is already linked is not applied twice', count(array_filter($svc->effective('p1', null, [$setId]), static fn ($r) => $r['layer'] === 'set')) , count(array_filter($svc->effective('p1', null), static fn ($r) => $r['layer'] === 'set')));
 
+// move or copy a rule between rulesets
+$svc->save('project', 'p2', 'Quark', 'Kwork', true, true, 'bartender');
+$rid = (int) $svc->rules('project', 'p2')[0]['id'];
+check('copying creates the rule in the other ruleset and keeps the original', [$svc->transfer($rid, 'default', '', false), count($svc->rules('project', 'p2')), array_column($svc->rules('default', ''), 'replacement', 'pattern')['Quark'] ?? null], ['created', 1, 'Kwork']);
+$copy = array_values(array_filter($svc->rules('default', ''), static fn ($r) => $r['pattern'] === 'Quark'))[0];
+check('flags and note are copied too', [(int) $copy['case_sensitive'], (int) $copy['whole_word'], $copy['note']], [1, 1, 'bartender']);
+$svc->save('voice', 'bm_lewis', 'Quark', 'old');
+check('copying onto an existing written form replaces it', [$svc->transfer($rid, 'voice', 'bm_lewis', false), $svc->rules('voice', 'bm_lewis')[0]['replacement']], ['replaced', 'Kwork']);
+check('moving removes the original', [$svc->transfer($rid, 'set', $setId, true), count($svc->rules('project', 'p2')), count(array_filter($svc->rules('set', $setId), static fn ($r) => $r['pattern'] === 'Quark'))], ['created', 0, 1]);
+check('a rule cannot be moved to where it already is', (function () use ($svc, $setId): string { $id = (int) array_values(array_filter($svc->rules('set', $setId), static fn ($r) => $r['pattern'] === 'Quark'))[0]['id']; try { $svc->transfer($id, 'set', $setId, false); return 'accepted'; } catch (InvalidArgumentException $e) { return 'rejected'; } })(), 'rejected');
+check('unknown destinations and rules are refused', [(function () use ($svc): string { try { $svc->transfer(1, 'set', 'nope', false); return 'accepted'; } catch (InvalidArgumentException $e) { return 'rejected'; } })(), (function () use ($svc): string { try { $svc->transfer(999999, 'default', '', false); return 'accepted'; } catch (InvalidArgumentException $e) { return 'rejected'; } })()], ['rejected', 'rejected']);
+check('layer names read well in messages', [$svc->layerName('default', ''), $svc->layerName('voice', 'bm_lewis'), $svc->layerName('set', $setId), $svc->layerName('project', 'p1')], ['Default', 'Voice bm_lewis', 'Ruleset DS9', 'Project Book One']);
+
 // disabling a rule in a higher layer switches the pattern off
 $rule = $svc->rules('project', 'p1')[0];
 $svc->setEnabled((int) $rule['id'], false);

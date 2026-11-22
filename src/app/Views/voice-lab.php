@@ -42,7 +42,7 @@ $renderVoiceOptions = static function (array $groups, string $selected): string 
     <button type="button" class="button secondary" data-use-sample>Use sample passage</button>
     <span data-char-count></span>
   </div>
-  <label>Pronunciation rules
+  <label>Rules
     <select data-lab-pron>
       <option value="off">Off, send the text as typed</option>
       <option value="">On: default and voice layers only</option>

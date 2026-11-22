@@ -39,3 +39,14 @@ Series sets: a named bundle of rules (for example "Star Trek DS9") that can be a
 - Star Trek text rules (stardates, years, ALL-CAPS) become optional presets inside series sets.
 - Raw WAV is large, about 3 MB per minute. Per-segment files are kept for regeneration and deleted only on request.
 - Speed default is 1.0 (slower sounded worse in your tests).
+
+## Next changes (list from 2026-11-22)
+
+| # | Change | State |
+|---|--------|-------|
+| 1 | Pronunciation becomes **Rulesets** (nav, tabs, titles, wording; `/?page=rulesets`, the old link still works). "Series set" is now "ruleset". The side panel is called "Sound test". | done |
+| 2 | **Move or copy a rule** to another ruleset (default, a voice, a shared ruleset, a project). A rule with the same written form there is replaced, and the message says so. | done |
+| 3 | **Regex rules and a regex helper.** Each rule gets a match type: whole word, anywhere, or regex. A helper builds the pattern from plain choices (starts with, ends with, contains, any of these words, optional letters, digits, capitalised word, possessive) with a plain-English description and a live count of matches in the book. The example finder and prev/next use the same matching. Safety: patterns are validated on save, length-limited, and run with a low backtracking limit. | next |
+| 4 | **Text checks**: a project tab that scans the book for things that trip a voice and lists them with counts, examples and the same sound-test bar. A dropdown picks the kind: proper nouns, numbers (years, ordinals, digits with units), Roman numerals, initialisms, abbreviations, dates and times, odd spellings. Common words that merely look like proper nouns are filtered out with a word list (the container's `wamerican` list). Each row can become a rule. | after 3 |
+| 5 | **Automatic sound test.** Spike first, then decide: (a) does the Kokoro server accept inline phonemes, which would make rules exact; (b) reference pronunciations from an online dictionary (IPA and audio); (c) how to judge "sounds alike" (speech recognition on the synthesized clip, or phoneme comparison); (d) an upload for a reference clip when none is found. Deliverable: a measured prototype on about ten words before any UI. | spike |
+| 6 | **Project page layout**: a workflow stepper (Source, Structure, Rulesets, Review, Generate, Export) with a status and one clear next action per step; settings move into their own panel; the lifecycle controls fold away. | planned |

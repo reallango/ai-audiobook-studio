@@ -10,11 +10,11 @@ $projectIdForBack = (string) ($_GET['id'] ?? $_GET['project'] ?? $_POST['id'] ??
 // Pages that belong to one project get the project header and tabs instead of a back link.
 $tabByRoute = [
     'project' => 'overview', 'epub-upload' => 'source', 'source-sections' => 'source', 'source-section' => 'source',
-    'chapters' => 'chapters', 'chapter-review' => 'chapters', 'pronunciation' => 'pronunciation',
+    'chapters' => 'chapters', 'chapter-review' => 'chapters', 'pronunciation' => 'pronunciation', 'rulesets' => 'pronunciation',
 ];
 $activeTab = $script === 'logical_sections.php' ? 'structure' : ($tabByRoute[$route] ?? null);
 $shellProject = $projectNav['project'] ?? (($activeTab !== null && isset($project) && is_array($project) && isset($project['id'], $project['title'])) ? $project : null);
-if ($route === 'pronunciation' && !isset($projectNav)) $shellProject = null;   // the page sets it when a project layer is shown
+if (in_array($route, ['pronunciation', 'rulesets'], true) && !isset($projectNav)) $shellProject = null;   // the page sets it when a project layer is shown
 
 if ($shellProject !== null) {
     $backUrl = null;
@@ -31,13 +31,13 @@ if ($shellProject !== null) {
 $navLinks = [
     ['projects', 'Projects', base_url()],
     ['voice-lab', 'Voice Lab', base_url('voice-lab')],
-    ['pronunciation', 'Pronunciation', base_url('pronunciation')],
+    ['rulesets', 'Rulesets', base_url('rulesets')],
     ['diagnostics', 'Diagnostics', base_url('diagnostics')],
 ];
 $currentNav = match (true) {
     $route === 'voice-lab' => 'voice-lab',
     $route === 'diagnostics' => 'diagnostics',
-    $route === 'pronunciation' && $shellProject === null => 'pronunciation',
+    in_array($route, ['pronunciation', 'rulesets'], true) && $shellProject === null => 'rulesets',
     default => 'projects',
 };
 ?>
@@ -84,7 +84,7 @@ $currentNav = match (true) {
             'source' => ['Source', base_url('source-sections', ['id' => $shellProject['id']])],
             'structure' => ['Structure', rtrim((string) config('app.base_path', ''), '/') . '/logical_sections.php?project=' . rawurlencode((string) $shellProject['id'])],
             'chapters' => ['Chapters and audio', base_url('chapters', ['id' => $shellProject['id']])],
-            'pronunciation' => ['Pronunciation', base_url('pronunciation', ['layer' => 'project', 'ref' => $shellProject['id']])],
+            'pronunciation' => ['Rulesets', base_url('rulesets', ['layer' => 'project', 'ref' => $shellProject['id']])],
         ] as $tab => [$label, $href]): ?>
           <a href="<?= e($href) ?>" <?= $activeTab === $tab ? 'class="active" aria-current="page"' : '' ?>><?= e($label) ?></a>
         <?php endforeach; ?>

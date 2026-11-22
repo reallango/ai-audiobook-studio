@@ -8,13 +8,13 @@ use PDO;
 
 /**
  * Layered pronunciation overrides, applied to text before it is sent to Kokoro.
- * Precedence, lowest to highest: default < voice < series set < project.
+ * Precedence, lowest to highest: default < voice < ruleset < project.
  */
 final class PronunciationService
 {
-    public const LAYER_LABELS = ['default' => 'Default', 'voice' => 'Voice', 'set' => 'Series set', 'project' => 'Project'];
+    public const LAYER_LABELS = ['default' => 'Default', 'voice' => 'Voice', 'set' => 'Ruleset', 'project' => 'Project'];
 
-    /** Bundled lists the UI can import as a series set (file name => set name). */
+    /** Bundled lists the UI can import as a ruleset (file name => set name). */
     public const BUNDLED = ['sisko-original.json' => 'Star Trek DS9: Sisko (original list)'];
 
     // ----- rules -----
@@ -50,6 +50,53 @@ final class PronunciationService
     public function setEnabled(int $ruleId, bool $enabled): void
     {
         $this->db()->prepare('UPDATE pronunciation_rules SET enabled=:e, updated_at=CURRENT_TIMESTAMP WHERE id=:id')->execute(['e' => (int) $enabled, 'id' => $ruleId]);
+    }
+
+    /**
+     * Moves or copies one rule to another ruleset (default, a voice, a shared ruleset or a project).
+     * A rule with the same written form already there is replaced. Returns 'created' or 'replaced'.
+     */
+    public function transfer(int $ruleId, string $toScope, string $toRef, bool $move): string
+    {
+        $s = $this->db()->prepare('SELECT * FROM pronunciation_rules WHERE id=:id');
+        $s->execute(['id' => $ruleId]);
+        $rule = $s->fetch();
+        if (!$rule) throw new InvalidArgumentException('That rule no longer exists.');
+        $toRef = $toScope === 'default' ? '' : $toRef;
+        $this->assertLayer($toScope, $toRef);
+        if ($rule['scope'] === $toScope && (string) $rule['scope_ref'] === $toRef) throw new InvalidArgumentException('The rule is already in that ruleset.');
+
+        $db = $this->db();
+        $exists = $db->prepare('SELECT 1 FROM pronunciation_rules WHERE scope=:s AND scope_ref=:r AND pattern=:p');
+        $exists->execute(['s' => $toScope, 'r' => $toRef, 'p' => $rule['pattern']]);
+        $replaced = (bool) $exists->fetchColumn();
+        $db->beginTransaction();
+        try {
+            $db->prepare(
+                'INSERT INTO pronunciation_rules(scope,scope_ref,pattern,replacement,case_sensitive,whole_word,enabled,note)
+                 VALUES(:s,:r,:p,:rep,:cs,:ww,:en,:n)
+                 ON CONFLICT(scope,scope_ref,pattern) DO UPDATE SET replacement=excluded.replacement, case_sensitive=excluded.case_sensitive,
+                   whole_word=excluded.whole_word, enabled=excluded.enabled, note=excluded.note, updated_at=CURRENT_TIMESTAMP'
+            )->execute(['s' => $toScope, 'r' => $toRef, 'p' => $rule['pattern'], 'rep' => $rule['replacement'], 'cs' => $rule['case_sensitive'], 'ww' => $rule['whole_word'], 'en' => $rule['enabled'], 'n' => $rule['note']]);
+            if ($move) $db->prepare('DELETE FROM pronunciation_rules WHERE id=:id')->execute(['id' => $ruleId]);
+            $db->commit();
+        } catch (\Throwable $e) {
+            if ($db->inTransaction()) $db->rollBack();
+            throw $e;
+        }
+        return $replaced ? 'replaced' : 'created';
+    }
+
+    /** A readable name for a ruleset, for messages. */
+    public function layerName(string $scope, string $ref): string
+    {
+        return match ($scope) {
+            'default' => 'Default',
+            'voice' => 'Voice ' . $ref,
+            'set' => 'Ruleset ' . (string) ($this->set($ref)['name'] ?? '?'),
+            'project' => 'Project ' . (string) ($this->db()->query('SELECT title FROM projects WHERE id=' . $this->db()->quote($ref))->fetchColumn() ?: '?'),
+            default => $scope,
+        };
     }
 
     public function delete(int $ruleId): void
@@ -92,7 +139,7 @@ final class PronunciationService
         return $data;
     }
 
-    // ----- series sets -----
+    // ----- rulesets (named, shared) -----
 
     /** @return array<int,array<string,mixed>> */
     public function sets(): array
@@ -115,12 +162,12 @@ final class PronunciationService
     public function createSet(string $name, string $description = ''): string
     {
         $name = trim($name);
-        if ($name === '' || mb_strlen($name) > 100) throw new InvalidArgumentException('A set name must be 1 to 100 characters.');
+        if ($name === '' || mb_strlen($name) > 100) throw new InvalidArgumentException('A ruleset name must be 1 to 100 characters.');
         $id = self::uuid();
         try {
             $this->db()->prepare('INSERT INTO pronunciation_sets(id,name,description) VALUES(:id,:n,:d)')->execute(['id' => $id, 'n' => $name, 'd' => mb_substr(trim($description), 0, 300)]);
         } catch (\PDOException $e) {
-            throw new InvalidArgumentException('A set with that name already exists.');
+            throw new InvalidArgumentException('A ruleset with that name already exists.');
         }
         return $id;
     }
@@ -145,7 +192,7 @@ final class PronunciationService
 
     public function attachSet(string $projectId, string $setId): void
     {
-        if (!$this->set($setId)) throw new InvalidArgumentException('That series set does not exist.');
+        if (!$this->set($setId)) throw new InvalidArgumentException('That ruleset does not exist.');
         $pos = (int) $this->db()->query("SELECT COALESCE(MAX(position),0)+1 FROM project_pronunciation_sets WHERE project_id=" . $this->db()->quote($projectId))->fetchColumn();
         $this->db()->prepare('INSERT OR IGNORE INTO project_pronunciation_sets(project_id,set_id,position) VALUES(:p,:s,:pos)')->execute(['p' => $projectId, 's' => $setId, 'pos' => $pos]);
     }
@@ -165,14 +212,14 @@ final class PronunciationService
     {
         $layers = [['default', '', 'Default']];
         if ($voice !== null && $voice !== '') $layers[] = ['voice', $voice, 'Voice ' . $voice];
-        // Series sets applied on top of the voice without a project, for testing the set you are editing.
+        // Rulesets applied on top of the voice without a project, for testing the set you are editing.
         $linked = $projectId !== null && $projectId !== '' ? array_column($this->projectSets($projectId), 'id') : [];
         foreach ($extraSetIds as $setId) {
             $set = $this->set((string) $setId);
-            if ($set !== null && !in_array($set['id'], $linked, true)) $layers[] = ['set', (string) $set['id'], 'Set ' . $set['name']];
+            if ($set !== null && !in_array($set['id'], $linked, true)) $layers[] = ['set', (string) $set['id'], 'Ruleset ' . $set['name']];
         }
         if ($projectId !== null && $projectId !== '') {
-            foreach ($this->projectSets($projectId) as $set) $layers[] = ['set', (string) $set['id'], 'Set ' . $set['name']];
+            foreach ($this->projectSets($projectId) as $set) $layers[] = ['set', (string) $set['id'], 'Ruleset ' . $set['name']];
             $layers[] = ['project', $projectId, 'Project'];
         }
         $effective = [];
@@ -342,7 +389,7 @@ final class PronunciationService
                 if (!KokoroClient::validVoice($ref)) throw new InvalidArgumentException('That voice name is not valid.');
                 return;
             case 'set':
-                if (!$this->set($ref)) throw new InvalidArgumentException('That series set does not exist.');
+                if (!$this->set($ref)) throw new InvalidArgumentException('That ruleset does not exist.');
                 return;
             case 'project':
                 $s = $this->db()->prepare('SELECT 1 FROM projects WHERE id=:id');

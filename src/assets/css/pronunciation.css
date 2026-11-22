@@ -19,6 +19,12 @@
 .pron-table tr.off td { opacity: .45; }
 .pron-actions { white-space: nowrap; }
 .pron-actions form { display: inline; }
+.rule-transfer { display: inline-block; position: relative; vertical-align: top; }
+.rule-transfer summary { cursor: pointer; display: inline; font-size: .85rem; text-decoration: underline; color: var(--accent2); list-style: none; padding: 0 .4rem; }
+.rule-transfer summary::-webkit-details-marker { display: none; }
+.rule-transfer[open] > form { display: grid; gap: 8px; position: absolute; right: 0; top: 1.6rem; z-index: 5; min-width: 15rem; padding: 12px; background: var(--surface2); border: 1px solid var(--line); border-radius: var(--radius-sm); box-shadow: 0 8px 24px #0006; }
+.rule-transfer label { display: grid; gap: 3px; font-size: .85rem; }
+.rule-transfer label.check { display: flex; gap: 6px; align-items: center; }
 .link-button { background: none; border: 0; padding: 0 .4rem; color: inherit; text-decoration: underline; cursor: pointer; font: inherit; }
 .link-button.danger, button.danger { color: #c0392b; }
 .pron-import { margin-top: 1.25rem; }

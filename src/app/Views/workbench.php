@@ -2,7 +2,7 @@
 declare(strict_types=1);
 
 /*
- * The pronunciation panel, shared by the chapter page and the Pronunciation page.
+ * The pronunciation panel, shared by the chapter page and the Rulesets page.
  * Expects: $wbToken, $wbVoice, $wbSpeed, $wbLayers (list of [value, label]), and optionally $wbProject (project id or null).
  */
 $wbProject ??= null;
@@ -11,7 +11,7 @@ $wbProject ??= null;
   <section class="workbench" data-workbench
            data-preview="<?= e(base_url('voice-preview')) ?>" data-rule="<?= e(base_url('pronunciation-rule')) ?>" data-example="<?= e(base_url('pronunciation-example')) ?>"
            data-token="<?= e($wbToken) ?>" data-project="<?= e((string) ($wbProject ?? '')) ?>" data-set="<?= e((string) ($wbSet ?? '')) ?>" data-voice="<?= e($wbVoice) ?>" data-speed="<?= e(number_format((float) $wbSpeed, 2, '.', '')) ?>">
-    <h2>Pronunciation</h2>
+    <h2>Sound test</h2>
     <p class="muted">Pick a word to try: click an underlined word, select words in the text, or press <b>try</b> on a rule. Change how it sounds, compare, then save it as a rule. Nothing changes until you save.</p>
     <p class="wb-from" data-wb-from></p>
     <div class="wb-row">

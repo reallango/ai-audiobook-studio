@@ -23,7 +23,7 @@ $excludedCount = count(array_filter($chapter['items'], static fn (array $i): boo
       <span class="chapter-status <?= e($chapter['status']) ?>"><?= e($labels[$chapter['status']]) ?></span>
       <?= number_format($chapter['words']) ?> words, voice <code><?= e($chapter['voice']) ?></code>,
       <?= count($chapter['items']) ?> paragraphs<?= $excludedCount ? ", $excludedCount skipped" : '' ?>.
-      Pronunciation rules from the project's layers are already applied.
+      The project's rules are already applied.
     </p>
   </div>
   <div class="review-actions">
@@ -130,7 +130,7 @@ $renderPieces = static function (array $item): string {
     $html = '';
     foreach ($item['pieces'] as $p) {
         if ($p['kind'] === 'plain') { $html .= e((string) $p['out']); continue; }
-        $label = $p['kind'] === 'rule' ? ($p['label'] !== '' ? $p['label'] : 'Pronunciation rule') : ($p['kind'] === 'caps' ? 'ALL-CAPS word' : 'Your edit');
+        $label = $p['kind'] === 'rule' ? ($p['label'] !== '' ? $p['label'] : 'Rule') : ($p['kind'] === 'caps' ? 'ALL-CAPS word' : 'Your edit');
         $layer = $p['kind'] === 'rule' && $p['scope'] !== '' ? $p['scope'] . '|' . $p['scope_ref'] : '';
         $title = (string) $p['src'] . ' → ' . ((string) $p['out'] === '' ? '(removed)' : (string) $p['out']) . ' · ' . $label;
         $inner = (string) $p['out'] === '' ? '<s>' . e((string) $p['src']) . '</s>' : e((string) $p['out']);
@@ -144,7 +144,7 @@ $renderPieces = static function (array $item): string {
   <div class="review-main">
     <p class="legend">
       Underlined words were changed before narration:
-      <mark class="chg rule">pronunciation rule</mark> <mark class="chg caps">ALL-CAPS word</mark> <mark class="chg edit">your edit</mark>.
+      <mark class="chg rule">rule</mark> <mark class="chg caps">ALL-CAPS word</mark> <mark class="chg edit">your edit</mark>.
       Click one to hear it, or select any words to try a different pronunciation.
       <?php if (!$archived): ?>Use <b>Edit</b> on a paragraph to change its text in place.<?php endif; ?>
     </p>
@@ -183,7 +183,7 @@ $renderPieces = static function (array $item): string {
   <?php if (!$archived):
       $linkedSets = (new \App\Services\PronunciationService())->projectSets((string) $project['id']);
       $wbLayers = [['project|' . $project['id'], 'This project only']];
-      foreach ($linkedSets as $set) $wbLayers[] = ['set|' . $set['id'], 'Series set: ' . $set['name']];
+      foreach ($linkedSets as $set) $wbLayers[] = ['set|' . $set['id'], 'Ruleset: ' . $set['name']];
       $wbLayers[] = ['voice|' . $chapter['voice'], 'Voice ' . $chapter['voice'] . ', every book'];
       $wbLayers[] = ['default|', 'Default, every book and voice'];
       $wbProject = (string) $project['id'];

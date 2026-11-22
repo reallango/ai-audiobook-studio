@@ -62,7 +62,7 @@ require APP_ROOT . '/app/Views/layout-top.php';
     <?php elseif ($logicalCount === 0): ?>
       <p>Create logical chapters, group split chapter files, and choose included sections.</p><a class="button" href="<?= e($logicalUrl) ?>">Build audiobook structure</a>
     <?php else: ?>
-      <p><?= number_format($logicalCount) ?> logical sections are ready for editing.</p><a class="button" href="<?= e($logicalUrl) ?>">Edit audiobook structure</a> <a class="button secondary" href="<?= e(base_url('chapters', ['id' => $project['id']])) ?>">Review chapters</a> <a class="button secondary" href="<?= e(base_url('pronunciation', ['layer' => 'project', 'ref' => $project['id']])) ?>">Pronunciation</a>
+      <p><?= number_format($logicalCount) ?> logical sections are ready for editing.</p><a class="button" href="<?= e($logicalUrl) ?>">Edit audiobook structure</a> <a class="button secondary" href="<?= e(base_url('chapters', ['id' => $project['id']])) ?>">Review chapters</a> <a class="button secondary" href="<?= e(base_url('rulesets', ['layer' => 'project', 'ref' => $project['id']])) ?>">Rulesets</a>
     <?php endif; ?>
   </article>
 
@@ -73,7 +73,7 @@ require APP_ROOT . '/app/Views/layout-top.php';
       <label>Voice<input data-setting="voice" list="kokoro-voices" value="<?= e($voiceValue) ?>" maxlength="100" placeholder="Example: am_michael" <?= $archived ? 'disabled' : '' ?>></label>
       <datalist id="kokoro-voices"><?php foreach (\App\Services\VoiceCatalog::all() as $voiceName): ?><option value="<?= e($voiceName) ?>"><?php endforeach; ?></datalist>
       <label>Speed <small>0.5 to 2.0, 1.0 is normal</small><input data-setting="speed" type="number" min="0.5" max="2" step="0.05" value="<?= e(number_format($speedValue, 2, '.', '')) ?>" required <?= $archived ? 'disabled' : '' ?>></label>
-      <label class="check"><input type="checkbox" data-setting="normalize_caps" <?= $capsValue ? 'checked' : '' ?> <?= $archived ? 'disabled' : '' ?>> Say ALL-CAPS words as normal words (STARBASE as Starbase). A pronunciation rule always wins.</label>
+      <label class="check"><input type="checkbox" data-setting="normalize_caps" <?= $capsValue ? 'checked' : '' ?> <?= $archived ? 'disabled' : '' ?>> Say ALL-CAPS words as normal words (STARBASE as Starbase). A rule always wins.</label>
       <label>Audio quality <small>mono AAC (m4a, m4b)</small><select data-setting="bitrate" <?= $archived ? 'disabled' : '' ?>><?php foreach (\App\Services\AudioEncoder::BITRATES as $kbps => $label): ?><option value="<?= (int) $kbps ?>" <?= $bitrateValue === $kbps ? 'selected' : '' ?>><?= (int) $kbps ?> kbps, <?= e(strtolower($label)) ?></option><?php endforeach; ?></select></label>
       <?php if (!$archived): ?><div class="settings-actions"><span data-settings-state>All changes saved</span><button type="button" data-save-settings disabled>Save settings</button></div><?php endif; ?>
     </form>

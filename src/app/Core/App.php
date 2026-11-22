@@ -22,7 +22,7 @@ final class App
     public static function run(): void
     {
         $route=trim((string)($_GET['page']??'projects'),'/');
-        try{match($route){'api-health'=>self::json(self::health()),'diagnostics'=>self::view('diagnostics'),'projects','home',''=>self::projects(),'project-create'=>self::createProject(),'project'=>self::project(),'epub-upload'=>self::epubUpload(),'epub-analyze'=>self::epubAnalyze(),'source-sections'=>self::sourceSections(),'source-section'=>self::sourceSection(),'project-archive'=>self::archiveProject(),'project-restore'=>self::restoreProject(),'project-delete'=>self::deleteProject(),'voice-lab'=>self::voiceLab(),'voice-preview'=>self::voicePreview(),'pronunciation'=>self::pronunciation(),'pronunciation-rule'=>self::pronunciationRule(),'pronunciation-example'=>self::pronunciationExample(),'chapters'=>self::chapters(),'chapter-review'=>self::chapterReview(),'chapter-audio'=>self::chapterAudio(),'chapter-text'=>self::chapterText(),'audio'=>self::audio(),'export'=>self::export(),default=>self::notFound()};}
+        try{match($route){'api-health'=>self::json(self::health()),'diagnostics'=>self::view('diagnostics'),'projects','home',''=>self::projects(),'project-create'=>self::createProject(),'project'=>self::project(),'epub-upload'=>self::epubUpload(),'epub-analyze'=>self::epubAnalyze(),'source-sections'=>self::sourceSections(),'source-section'=>self::sourceSection(),'project-archive'=>self::archiveProject(),'project-restore'=>self::restoreProject(),'project-delete'=>self::deleteProject(),'voice-lab'=>self::voiceLab(),'voice-preview'=>self::voicePreview(),'pronunciation'=>self::pronunciation(),'rulesets'=>self::pronunciation(),'pronunciation-rule'=>self::pronunciationRule(),'pronunciation-example'=>self::pronunciationExample(),'chapters'=>self::chapters(),'chapter-review'=>self::chapterReview(),'chapter-audio'=>self::chapterAudio(),'chapter-text'=>self::chapterText(),'audio'=>self::audio(),'export'=>self::export(),default=>self::notFound()};}
         catch(Throwable $error){error_log($error->__toString());http_response_code(500);self::view('error',['message'=>config('app.debug',false)?$error->getMessage():'The request could not be completed. Check the application log for details.']);}
     }
     private static function voiceLab():void
@@ -38,7 +38,7 @@ final class App
         ]);
     }
 
-    /** Pronunciation manager: one layer at a time (default, voice, series set, project), plus a rewrite test. */
+    /** Rulesets: one layer at a time (default, voice, shared ruleset, project), plus a rewrite test. */
     private static function pronunciation():void
     {
         $svc = new PronunciationService();
@@ -58,7 +58,7 @@ final class App
             $back = ['layer' => $layer, 'ref' => $ref];
             if (!Csrf::validate(isset($_POST['_token']) ? (string) $_POST['_token'] : null)) {
                 self::flash('error', 'Security token expired. Try again.');
-                self::redirect('pronunciation', $back);
+                self::redirect('rulesets', $back);
             }
             try {
                 $action = (string) ($_POST['action'] ?? '');
@@ -69,6 +69,12 @@ final class App
                         break;
                     case 'toggle_rule':
                         $svc->setEnabled((int) ($_POST['id'] ?? 0), ($_POST['enabled'] ?? '') === '1');
+                        break;
+                    case 'transfer_rule':
+                        [$toScope, $toRef] = array_pad(explode('|', (string) ($_POST['to'] ?? ''), 2), 2, '');
+                        $move = ($_POST['mode'] ?? 'copy') === 'move';
+                        $result = $svc->transfer((int) ($_POST['id'] ?? 0), $toScope, $toRef, $move);
+                        self::flash('success', ($move ? 'Moved' : 'Copied') . ' the rule to ' . $svc->layerName($toScope, $toRef) . ($result === 'replaced' ? ', replacing the rule with the same written form there' : '') . '.');
                         break;
                     case 'delete_rule':
                         $svc->delete((int) ($_POST['id'] ?? 0));
@@ -87,27 +93,27 @@ final class App
                         $existing = array_values(array_filter($sets, static fn (array $s): bool => $s['name'] === $name));
                         $setId = $existing ? (string) $existing[0]['id'] : $svc->createSet($name, 'Imported from the bundled ' . $file);
                         $count = $svc->importMap('set', $setId, PronunciationService::decodeJsonMap((string) file_get_contents(APP_ROOT . '/resources/pronunciations/' . $file)));
-                        self::flash('success', "Imported $count rules into the series set \"$name\".");
+                        self::flash('success', "Imported $count rules into the ruleset \"$name\".");
                         $back = ['layer' => 'set', 'ref' => $setId];
                         break;
                     case 'create_set':
                         $setId = $svc->createSet((string) ($_POST['name'] ?? ''), (string) ($_POST['description'] ?? ''));
-                        self::flash('success', 'Series set created.');
+                        self::flash('success', 'Ruleset created.');
                         $back = ['layer' => 'set', 'ref' => $setId];
                         break;
                     case 'delete_set':
-                        if ((string) ($_POST['confirm'] ?? '') !== 'yes') throw new \InvalidArgumentException('Tick the box to confirm deleting the set.');
+                        if ((string) ($_POST['confirm'] ?? '') !== 'yes') throw new \InvalidArgumentException('Tick the box to confirm deleting the ruleset.');
                         $svc->deleteSet($ref);
-                        self::flash('success', 'Series set deleted.');
+                        self::flash('success', 'Ruleset deleted.');
                         $back = ['layer' => 'set', 'ref' => ''];
                         break;
                     case 'attach_set':
                         $svc->attachSet($ref, (string) ($_POST['set_id'] ?? ''));
-                        self::flash('success', 'Series set linked to the project.');
+                        self::flash('success', 'Ruleset linked to the project.');
                         break;
                     case 'detach_set':
                         $svc->detachSet($ref, (string) ($_POST['set_id'] ?? ''));
-                        self::flash('success', 'Series set unlinked.');
+                        self::flash('success', 'Ruleset unlinked.');
                         break;
                     default:
                         throw new \InvalidArgumentException('Unknown action.');
@@ -115,7 +121,7 @@ final class App
             } catch (Throwable $error) {
                 self::flash('error', $error->getMessage());
             }
-            self::redirect('pronunciation', $back);
+            self::redirect('rulesets', $back);
         }
 
         $currentSet = $layer === 'set' && $ref !== '' ? $svc->set($ref) : null;
