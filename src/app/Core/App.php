@@ -125,7 +125,7 @@ final class App
         $testProject = (string) ($_GET['test_project'] ?? '');
         $testResult = null;
         if ($testText !== '') {
-            $effective = $svc->effective($testProject !== '' ? $testProject : null, $testVoice);
+            $effective = $svc->effective($testProject !== '' ? $testProject : null, $testVoice, $layer === 'set' && $ref !== '' ? [$ref] : []);
             $testRow = $testProject !== '' ? (new ProjectRepository())->find($testProject) : null;
             $testResult = $svc->apply(mb_substr($testText, 0, 2000), $effective, $testRow === null || (int) ($testRow['normalize_caps'] ?? 1) === 1) + ['effective' => $effective];
         }
@@ -200,7 +200,8 @@ final class App
             $row = $project !== null ? (new ProjectRepository())->find($project) : null;
             if ($project !== null && !$row) { $fail(404, 'Project not found.'); return; }
             $service = new PronunciationService();
-            $effective = $service->effective($project, $voice);
+            // the series set being edited counts too, so a test sentence hears the rest of that set
+            $effective = $service->effective($project, $voice, isset($payload['set_id']) && $payload['set_id'] !== '' ? [(string) $payload['set_id']] : []);
             // rules being tried right now, not saved anywhere
             if (!empty($payload['temp_rules']) && is_array($payload['temp_rules'])) $effective = $service->withTemporary($effective, $payload['temp_rules']);
             $spoken = $service->apply($text, $effective, $row === null || (int) ($row['normalize_caps'] ?? 1) === 1)['text'];

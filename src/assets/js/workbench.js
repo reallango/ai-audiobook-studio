@@ -84,9 +84,9 @@
   }
 
   /** Text to speech through the app. `rules` false sends the text exactly as given. */
-  async function speak({text: spokenText, voice, speed, token, url, rules, project, temp}) {
+  async function speak({text: spokenText, voice, speed, token, url, rules, project, temp, setId}) {
     const response = await post(url, token, {
-      text: spokenText, voice, speed, apply_pronunciation: rules, project_id: project || '', temp_rules: temp || []
+      text: spokenText, voice, speed, apply_pronunciation: rules, project_id: project || '', set_id: setId || '', temp_rules: temp || []
     });
     return {blob: await response.blob(), said: decodeURIComponent(response.headers.get('X-Spoken-Text') || '')};
   }
@@ -124,7 +124,7 @@
     status.textContent = 'Generating…';
     try {
       const temp = withChange && written.value.trim() ? [{pattern: written.value.trim(), replacement: spoken.value}] : [];
-      const result = await speak({text: text.value, voice: wb.dataset.voice, speed: Number(wb.dataset.speed), token: wb.dataset.token, url: wb.dataset.preview, rules: withChange, project: wb.dataset.project, temp});
+      const result = await speak({text: text.value, voice: wb.dataset.voice, speed: Number(wb.dataset.speed), token: wb.dataset.token, url: wb.dataset.preview, rules: withChange, project: wb.dataset.project, setId: wb.dataset.set, temp});
       if (audio.dataset.url) URL.revokeObjectURL(audio.dataset.url);
       audio.dataset.url = URL.createObjectURL(result.blob);
       audio.src = audio.dataset.url;

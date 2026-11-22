@@ -41,6 +41,12 @@ check('set beats voice', $spoken('p1', 'am_michael', 'Sisko'), 'Siss-koh');
 check('project beats set', $spoken('p1', 'am_michael', 'Worf'), 'Worff');
 check('project without the set is unaffected', $spoken('p2', 'am_michael', 'Worf Sisko'), 'Worf Sisk-oh');
 
+// testing inside a series set: the rest of that set applies even with no project
+check('a series set can be added to a test without a project', $svc->apply('Worf and Sisko', $svc->effective(null, 'am_michael', [$setId]))['text'], 'Woorf and Siss-koh');
+check('and without it the set does not apply', $svc->apply('Worf', $svc->effective(null, 'am_michael'))['text'], 'Worf');
+check('an unknown set id is ignored', $svc->apply('Worf', $svc->effective(null, null, ['nope']))['text'], 'Worf');
+check('a set that is already linked is not applied twice', count(array_filter($svc->effective('p1', null, [$setId]), static fn ($r) => $r['layer'] === 'set')) , count(array_filter($svc->effective('p1', null), static fn ($r) => $r['layer'] === 'set')));
+
 // disabling a rule in a higher layer switches the pattern off
 $rule = $svc->rules('project', 'p1')[0];
 $svc->setEnabled((int) $rule['id'], false);

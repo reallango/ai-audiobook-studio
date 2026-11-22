@@ -189,7 +189,7 @@ $explain = [
 <section class="form-panel pron-panel" id="test">
   <h2 class="pron-h2">Try it</h2>
   <p class="pron-explain">Shows what Kokoro will be sent for a voice and project, with the layer each rule came from.</p>
-  <form method="get" action="<?= e(base_url('pronunciation')) ?>#test" class="pron-test"
+  <form method="get" action="<?= e(base_url('pronunciation')) ?>#test" class="pron-test" data-set="<?= e($layer === 'set' ? $ref : '') ?>"
         data-endpoint="<?= e(base_url('voice-preview')) ?>" data-token="<?= e(Csrf::token()) ?>">
     <input type="hidden" name="page" value="pronunciation"><input type="hidden" name="layer" value="<?= e($layer) ?>"><input type="hidden" name="ref" value="<?= e($ref) ?>">
     <label>Text <textarea name="test" rows="3" maxlength="2000" placeholder="Sisko and Worf left Bajor."><?= e($testText) ?></textarea></label>
@@ -220,6 +220,7 @@ $explain = [
 </div>
 <?php
     $wbProject = ($layer === 'project' && $ref !== '') ? $ref : null;
+    $wbSet = ($layer === 'set' && $ref !== '') ? $ref : null;      // the panel hears the rest of the set being edited
     $projectRow = $wbProject !== null ? (new \App\Repositories\ProjectRepository())->find($wbProject) : null;
     $wbVoice = $layer === 'voice' && $ref !== '' ? $ref : (string) (($projectRow['active_voice_profile_id'] ?? '') ?: \App\Services\VoiceCatalog::DEFAULT_VOICE);
     $wbSpeed = (float) ($projectRow['tts_speed'] ?? 1.0);

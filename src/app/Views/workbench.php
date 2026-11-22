@@ -10,7 +10,7 @@ $wbProject ??= null;
 <aside class="review-side">
   <section class="workbench" data-workbench
            data-preview="<?= e(base_url('voice-preview')) ?>" data-rule="<?= e(base_url('pronunciation-rule')) ?>" data-example="<?= e(base_url('pronunciation-example')) ?>"
-           data-token="<?= e($wbToken) ?>" data-project="<?= e((string) ($wbProject ?? '')) ?>" data-voice="<?= e($wbVoice) ?>" data-speed="<?= e(number_format((float) $wbSpeed, 2, '.', '')) ?>">
+           data-token="<?= e($wbToken) ?>" data-project="<?= e((string) ($wbProject ?? '')) ?>" data-set="<?= e((string) ($wbSet ?? '')) ?>" data-voice="<?= e($wbVoice) ?>" data-speed="<?= e(number_format((float) $wbSpeed, 2, '.', '')) ?>">
     <h2>Pronunciation</h2>
     <p class="muted">Pick a word to try: click an underlined word, select words in the text, or press <b>try</b> on a rule. Change how it sounds, compare, then save it as a rule. Nothing changes until you save.</p>
     <p class="wb-from" data-wb-from></p>

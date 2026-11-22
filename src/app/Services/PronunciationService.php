@@ -161,10 +161,16 @@ final class PronunciationService
      * The rules in force for a voice and (optionally) a project, after layering.
      * @return array<string,array<string,mixed>> keyed by lowercase pattern; each has layer and layer_label
      */
-    public function effective(?string $projectId, ?string $voice): array
+    public function effective(?string $projectId, ?string $voice, array $extraSetIds = []): array
     {
         $layers = [['default', '', 'Default']];
         if ($voice !== null && $voice !== '') $layers[] = ['voice', $voice, 'Voice ' . $voice];
+        // Series sets applied on top of the voice without a project, for testing the set you are editing.
+        $linked = $projectId !== null && $projectId !== '' ? array_column($this->projectSets($projectId), 'id') : [];
+        foreach ($extraSetIds as $setId) {
+            $set = $this->set((string) $setId);
+            if ($set !== null && !in_array($set['id'], $linked, true)) $layers[] = ['set', (string) $set['id'], 'Set ' . $set['name']];
+        }
         if ($projectId !== null && $projectId !== '') {
             foreach ($this->projectSets($projectId) as $set) $layers[] = ['set', (string) $set['id'], 'Set ' . $set['name']];
             $layers[] = ['project', $projectId, 'Project'];

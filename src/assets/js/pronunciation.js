@@ -17,7 +17,7 @@
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({
           _token: form.dataset.token, text, voice: form.elements.test_voice.value,
-          speed: 1.0, apply_pronunciation: true, project_id: form.elements.test_project.value
+          speed: 1.0, apply_pronunciation: true, project_id: form.elements.test_project.value, set_id: form.dataset.set || ''
         })
       });
       if (!response.ok) {
