@@ -419,7 +419,7 @@ final class App
                 self::redirect('chapters', ['id' => $projectId]);
             }
             session_write_close();
-            self::streamFile($zip, $slug . '-m4a', 'application/zip', true);
+            self::streamFile($zip, $slug . '-m4a.zip', 'application/zip', true);
             return;
         }
         self::notFound();

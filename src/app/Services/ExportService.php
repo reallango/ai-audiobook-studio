@@ -115,8 +115,8 @@ final class ExportService
         $zipPath = tempnam($tmpDir, 'zip');
         $zip = new ZipArchive();
         if ($zip->open($zipPath, ZipArchive::OVERWRITE) !== true) throw new RuntimeException('Cannot create the ZIP file.');
-        foreach ($ready as $chapter) {
-            $name = str_pad((string) $chapter['position'], 3, '0', STR_PAD_LEFT) . ' - ' . trim((string) preg_replace('/[^A-Za-z0-9 ._-]+/', '', $chapter['title'])) . '.m4a';
+        foreach ($ready as $index => $chapter) {
+            $name = str_pad((string) ($index + 1), 3, '0', STR_PAD_LEFT) . ' - ' . trim((string) preg_replace('/[^A-Za-z0-9 ._-]+/', '', $chapter['title'])) . '.m4a';
             $zip->addFile($chapter['path'], $name);
             $zip->setCompressionName($name, ZipArchive::CM_STORE);
         }
