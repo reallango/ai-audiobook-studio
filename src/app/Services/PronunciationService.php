@@ -37,7 +37,7 @@ final class PronunciationService
         $isRegex = $matchType === 'regex';
         $pattern = $isRegex ? trim($pattern) : trim($pattern);
         $replacement = trim($replacement);
-        if ($pattern === '' || mb_strlen($pattern) > ($isRegex ? 200 : 100)) throw new InvalidArgumentException($isRegex ? 'A pattern must be 1 to 200 characters.' : 'The written form must be 1 to 100 characters.');
+        if ($pattern === '' || mb_strlen($pattern) > ($isRegex ? 400 : 100)) throw new InvalidArgumentException($isRegex ? 'A pattern must be 1 to 400 characters.' : 'The written form must be 1 to 100 characters.');
         if ($isRegex && ($problem = self::validateRegex($pattern, $caseSensitive)) !== null) throw new InvalidArgumentException($problem);
         // An empty spoken form is allowed: it removes the text from the narration (watermarks, page markers).
         if (mb_strlen($replacement) > 200) throw new InvalidArgumentException('The spoken form is limited to 200 characters.');
@@ -80,7 +80,7 @@ final class PronunciationService
     public static function validateRegex(string $pattern, bool $caseSensitive = false): ?string
     {
         if (trim($pattern) === '') return 'Enter a pattern.';
-        if (mb_strlen($pattern) > 200) return 'A pattern is limited to 200 characters.';
+        if (mb_strlen($pattern) > 400) return 'A pattern is limited to 400 characters.';
         $full = self::regexFull($pattern, $caseSensitive);
         $message = '';
         set_error_handler(static function (int $no, string $text) use (&$message): bool { $message = $text; return true; });
@@ -400,10 +400,30 @@ final class PronunciationService
         $groups = [0 => $matched];
         $again = '~\G(?:' . self::regexBody((string) $rule['pattern']) . ')~u' . ((int) $rule['case_sensitive'] === 1 ? '' : 'i');
         if (@preg_match($again, $text, $found, 0, $offset) === 1) $groups = $found;
-        return (string) preg_replace_callback('~\$\{(\d+)\}|\$(\d+)|\\\\(\d+)~', static function (array $x) use ($groups): string {
-            $n = (int) (($x[1] ?? '') !== '' ? $x[1] : (($x[2] ?? '') !== '' ? $x[2] : ($x[3] ?? '0')));
-            return (string) ($groups[$n] ?? '');
+        return (string) preg_replace_callback('~\$\{(\d+)(?::([a-z]+))?\}|\$(\d+)|\\\\(\d+)~', static function (array $x) use ($groups): string {
+            $named = ($x[1] ?? '') !== '';
+            $n = (int) ($named ? $x[1] : (($x[3] ?? '') !== '' ? $x[3] : ($x[4] ?? '0')));
+            return self::transform((string) ($groups[$n] ?? ''), $named ? (string) ($x[2] ?? '') : '');
         }, $template);
+    }
+
+    /** Ways a remembered part can be changed in a spoken form, written as a dollar-brace group such as {1:upper}. */
+    public const TRANSFORMS = ['upper', 'lower', 'title', 'first', 'dash', 'space', 'digits'];
+
+    private static function transform(string $value, string $how): string
+    {
+        $chars = static fn (string $s): array => preg_split('//u', $s, -1, PREG_SPLIT_NO_EMPTY) ?: [];
+        $words = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine'];
+        return match ($how) {
+            'upper' => mb_strtoupper($value),
+            'lower' => mb_strtolower($value),
+            'title' => mb_convert_case($value, MB_CASE_TITLE, 'UTF-8'),
+            'first' => mb_strtoupper(mb_substr($value, 0, 1)) . mb_substr($value, 1),
+            'dash' => implode('-', $chars($value)),
+            'space' => implode(' ', $chars($value)),
+            'digits' => implode(' ', array_map(static fn (string $c): string => ctype_digit($c) ? $words[(int) $c] : $c, $chars($value))),
+            default => $value,
+        };
     }
 
     /** @return array<string,mixed> */
@@ -441,7 +461,7 @@ final class PronunciationService
             $case = !empty($t['case_sensitive']) ? 1 : 0;
             $pattern = trim((string) ($t['pattern'] ?? ''));
             if ($type !== 'regex') $pattern = str_replace(["\u{2019}", "\u{2018}"], "'", $pattern);
-            if ($pattern === '' || mb_strlen($pattern) > ($type === 'regex' ? 200 : 100) || mb_strlen((string) ($t['replacement'] ?? '')) > 200) continue;
+            if ($pattern === '' || mb_strlen($pattern) > ($type === 'regex' ? 400 : 100) || mb_strlen((string) ($t['replacement'] ?? '')) > 200) continue;
             if ($type === 'regex' && self::validateRegex($pattern, (bool) $case) !== null) continue;      // an unusable trial pattern is ignored
             $effective[mb_strtolower($pattern)] = [
                 'pattern' => $pattern, 'replacement' => (string) ($t['replacement'] ?? ''), 'case_sensitive' => $case, 'whole_word' => (int) ($type === 'word'),

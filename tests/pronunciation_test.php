@@ -63,7 +63,8 @@ $bad = static function (string $p) use ($svc): string { try { $svc->save('projec
 check('a broken pattern is refused with a reason', str_starts_with($bad('(unclosed'), 'This is not a valid pattern'), true);
 check('a pattern that matches nothing is refused', str_contains($bad('a*'), 'match nothing'), true);
 check('a catastrophic pattern is refused', str_contains($bad('(a+)+$'), 'too complex'), true);
-check('an empty or over-long pattern is refused', [$bad(''), str_contains($bad(str_repeat('a', 201)), '200')], ['A pattern must be 1 to 200 characters.', true]);
+check('an empty or over-long pattern is refused', [$bad(''), str_contains($bad(str_repeat('a', 401)), '400')], ['A pattern must be 1 to 400 characters.', true]);
+check('a part of a match can be changed on the way out', $svc->apply('say abc def now', $svc->withTemporary([], [['pattern' => '(?<![\p{L}])([a-z]+) ([a-z]{3})\b', 'replacement' => '${1:upper}+${2:dash}+${2:title}', 'match_type' => 'regex', 'case_sensitive' => 1]]), false)['text'], 'SAY+a-b-c+Abc DEF+n-o-w+Now');
 check('slashes and tildes in a pattern are fine', [PronunciationService::validateRegex('a/b~c'), $svc->apply('a/b~c', $svc->withTemporary([], [['pattern' => 'a/b~c', 'replacement' => 'ok', 'match_type' => 'regex']]), false)['text']], [null, 'ok']);
 check('a trial regex works and an invalid trial is ignored', [$svc->apply('call 12 now', $svc->withTemporary([], [['pattern' => '\d+', 'replacement' => 'N', 'match_type' => 'regex']]), false)['text'], $svc->apply('call 12 now', $svc->withTemporary([], [['pattern' => '(', 'replacement' => 'N', 'match_type' => 'regex']]), false)['text']], ['call N now', 'call 12 now']);
 check('regex pieces say which rule fired', array_values(array_filter($svc->apply('go 3 km', $svc->effective('p1', null), false)['pieces'], static fn ($p) => $p['kind'] === 'rule'))[0]['match'], 'regex');

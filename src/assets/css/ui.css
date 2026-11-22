@@ -272,3 +272,12 @@ mark.chg:hover, mark.chg:focus-visible { filter: brightness(1.25); outline: none
 .rh-body code { word-break: break-all; }
 .rh-examples { margin: 0; padding-left: 1.1rem; }
 .rh-examples mark { background: #ffe58a; padding: 0 2px; }
+.rh-body h4 { margin: .8rem 0 .2rem; }
+.rh-hint { margin: 0 0 .4rem; color: var(--muted, #666); font-size: .9em; }
+.rh-row { display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; margin-bottom: .35rem; }
+.rh-row input:not([type=checkbox]) { min-width: 8rem; }
+.rh-row .rh-n { width: 4.5rem; min-width: 0; }
+.rh-num { width: 1.4rem; height: 1.4rem; border-radius: 50%; background: var(--line, #ddd); display: inline-flex; align-items: center; justify-content: center; font-size: .8em; }
+.rh-opts { display: flex; flex-wrap: wrap; gap: 1rem; margin-top: .5rem; }
+.rh-after { color: #1a6b2f; }
+.rh-examples li { margin-bottom: .35rem; }

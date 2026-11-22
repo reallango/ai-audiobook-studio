@@ -118,7 +118,7 @@ $explain = [
     <h2 class="pron-h2"><?= e($layers[$layer]) ?> rules<?= $layer === 'voice' ? ' for ' . e($ref) : '' ?><?= $currentSet ? ': ' . e($currentSet['name']) : '' ?> <small>(<?= count($rules) ?>)</small></h2>
 
     <form method="post" class="pron-add" id="add"><?= $hidden() ?><input type="hidden" name="action" value="add_rule">
-      <label>Written <input name="pattern" maxlength="300" required placeholder="Bajor" value="<?= e($prefillWritten) ?>"></label>
+      <label>Written <input name="pattern" maxlength="400" required placeholder="Bajor" value="<?= e($prefillWritten) ?>"></label>
       <label>Spoken <small>(empty = say nothing)</small> <input name="replacement" maxlength="200" placeholder="Bay-jor" value="<?= e($prefillSpoken) ?>"></label>
       <label>Note <input name="note" maxlength="300" placeholder="optional"></label>
       <label>Match <select name="match_type"><option value="word">whole word</option><option value="anywhere">anywhere in a word</option><option value="regex">pattern (regex)</option></select></label>
@@ -126,27 +126,8 @@ $explain = [
       <button type="submit">Add or update</button>
     </form>
     <details class="regex-helper" id="regex-helper" data-url="<?= e(base_url('index.php?page=rulesets-regex')) ?>" data-project="<?= e($layer === 'project' ? $ref : '') ?>">
-      <summary>Pattern helper: build a pattern without knowing regex</summary>
-      <div class="rh-body">
-        <label>What do you want to match?
-          <select id="rh-recipe">
-            <option value="starts">Words that start with…</option>
-            <option value="ends">Words that end with…</option>
-            <option value="contains">Words that contain…</option>
-            <option value="either">Any of these words (a, b, c)</option>
-            <option value="number">A number followed by a unit (like 5kg)</option>
-            <option value="code">A code like AR-556, spelled out one character at a time</option>
-            <option value="after">A word only when it follows another word</option>
-          </select></label>
-        <label>Text <input id="rh-text" maxlength="120" placeholder="e.g. Bajor"></label>
-        <label id="rh-extra-wrap" hidden><span id="rh-extra-label">Unit</span> <input id="rh-extra" maxlength="60"></label>
-        <label class="check"><input type="checkbox" id="rh-case"> match case</label>
-        <p class="rh-explain" id="rh-explain">Type some text and the pattern appears here.</p>
-        <p>Pattern: <code id="rh-pattern">&nbsp;</code></p>
-        <p class="rh-result" id="rh-result" aria-live="polite"></p>
-        <ul class="rh-examples" id="rh-examples"></ul>
-        <button type="button" id="rh-use" disabled>Use this pattern</button>
-      </div>
+      <summary>Pattern builder: find and change text without knowing regex</summary>
+      <div class="rh-body" id="rh-mount"><noscript>The pattern builder needs JavaScript.</noscript></div>
     </details>
 
     <?php if ($rules): ?>

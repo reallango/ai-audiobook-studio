@@ -175,9 +175,13 @@ final class App
         $sentences = (new NarrationService())->exampleSentences($project !== '' ? $project : null, $pattern, true, $case, $cap, 'regex');
         $re = PronunciationService::regexFull($pattern, $case);
         $examples = [];
+        $replacement = array_key_exists('replacement', $_GET) ? (string) $_GET['replacement'] : null;
+        $svc = new PronunciationService();
+        $rules = $replacement === null ? [] : $svc->withTemporary([], [['pattern' => $pattern, 'replacement' => $replacement, 'match_type' => 'regex', 'case_sensitive' => $case]]);
         foreach (array_slice($sentences, 0, 6) as $sentence) {
             if (preg_match($re, $sentence, $m, PREG_OFFSET_CAPTURE) === 1) {
-                $examples[] = ['before' => substr($sentence, 0, $m[0][1]), 'match' => $m[0][0], 'after' => substr($sentence, $m[0][1] + strlen($m[0][0]))];
+                $examples[] = ['before' => substr($sentence, 0, $m[0][1]), 'match' => $m[0][0], 'after' => substr($sentence, $m[0][1] + strlen($m[0][0])),
+                    'result' => $rules === [] ? null : $svc->apply($sentence, $rules, false)['text']];
             }
         }
         self::json(['ok' => true, 'valid' => true, 'error' => '', 'count' => count($sentences), 'capped' => count($sentences) >= $cap, 'examples' => $examples]);
