@@ -178,6 +178,15 @@ final class NarrationService
      */
     public function exampleSentences(?string $projectId, string $word, bool $wholeWord = true, bool $caseSensitive = false, int $limit = 60, ?string $matchType = null): array
     {
+        return array_column($this->exampleHits($projectId, $word, $wholeWord, $caseSensitive, $limit, $matchType), 'sentence');
+    }
+
+    /**
+     * Sentences from the book that a rule would touch, each with where it is: project, chapter (logical section), paragraph.
+     * @return list<array{sentence:string,project:string,section:string,chapter:string,block:string}>
+     */
+    public function exampleHits(?string $projectId, string $word, bool $wholeWord = true, bool $caseSensitive = false, int $limit = 60, ?string $matchType = null): array
+    {
         if ($matchType === 'regex') {
             $word = trim($word);
             if (PronunciationService::validateRegex($word, $caseSensitive) !== null) return [];
@@ -191,17 +200,24 @@ final class NarrationService
         }
         $ids = $projectId !== null && $projectId !== '' ? [$projectId] : array_slice(array_column((new ProjectRepository())->all(false), 'id'), 0, 5);
         $found = [];
+        $repo = new LogicalSectionRepository();
         foreach ($ids as $id) {
-            foreach ($this->sourceTexts((string) $id) as $paragraph) {
-                if (preg_match($pattern, $paragraph) !== 1) continue;
-                foreach (Segmenter::sentences($paragraph) as $sentence) {
-                    if (preg_match($pattern, $sentence) !== 1) continue;
-                    $found[mb_substr($sentence, 0, 600)] = true;
-                    if (count($found) >= $limit) return array_keys($found);
+            foreach ($repo->all((string) $id) as $section) {
+                if ((int) $section['included'] !== 1) continue;
+                foreach ($repo->blocks((string) $section['id']) as $block) {
+                    $paragraph = self::clean((string) $block['source_text']);
+                    if (preg_match($pattern, $paragraph) !== 1) continue;
+                    foreach (Segmenter::sentences($paragraph) as $sentence) {
+                        if (preg_match($pattern, $sentence) !== 1) continue;
+                        $key = mb_substr($sentence, 0, 600);
+                        if (isset($found[$key])) continue;
+                        $found[$key] = ['sentence' => $key, 'project' => (string) $id, 'section' => (string) $section['id'], 'chapter' => trim((string) $section['title']), 'block' => (string) $block['id']];
+                        if (count($found) >= $limit) return array_values($found);
+                    }
                 }
             }
         }
-        return array_keys($found);
+        return array_values($found);
     }
 
     /** Removes every hand edit of a paragraph, so the rules alone decide its narration. */

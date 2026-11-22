@@ -22,6 +22,7 @@ $wbProject ??= null;
     <div class="wb-row wb-examples">
       <button type="button" class="button secondary" data-wb-prev title="Previous example from the book" aria-label="Previous example">&larr;</button>
       <span class="wb-count" data-wb-count>no example yet</span>
+      <a class="wb-where" data-wb-where href="#" target="_blank" rel="noopener" hidden>Open in the book</a>
       <button type="button" class="button secondary" data-wb-next title="Next example from the book" aria-label="Next example">&rarr;</button>
       <button type="button" class="button secondary" data-wb-example title="Find sentences in the book where this rule would apply">Find in the book</button>
     </div>

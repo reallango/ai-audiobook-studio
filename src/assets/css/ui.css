@@ -281,3 +281,9 @@ mark.chg:hover, mark.chg:focus-visible { filter: brightness(1.25); outline: none
 .rh-opts { display: flex; flex-wrap: wrap; gap: 1rem; margin-top: .5rem; }
 .rh-after { color: #1a6b2f; }
 .rh-examples li { margin-bottom: .35rem; }
+.pron-order { display: inline-flex; gap: .35rem; margin-right: .5rem; }
+.pron-order form { display: inline; }
+.pron-order-hint { font-size: .9em; color: var(--muted, #888); margin: .3rem 0 .6rem; }
+.pron-order-hint .inline-form { display: inline; }
+.pron-table tr.just-moved { outline: 2px solid #3b82f6; outline-offset: -2px; }
+.wb-where { margin-left: .6rem; font-size: .9em; }

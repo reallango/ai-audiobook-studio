@@ -149,6 +149,28 @@ $svc->save('default', '', '(?<![\p{L}\p{N}])([A-Za-z])([A-Za-z])-(\d)(\d)(\d)(?!
 check('codes like AR-556 are spelled out', $svc->apply('An AR-556 and an sb-335.', $svc->effective(null, null))['text'], 'An A-R-5-5-6 and an s-b-3-3-5.');
 check('longer codes are left alone', $svc->apply('The AR-5567 and ARX-556.', $svc->effective(null, null), false)['text'], 'The AR-5567 and ARX-556.');
 
+// arranging rules: the one higher in the list wins when two match at the same place
+$pdo->exec("INSERT INTO pronunciation_sets(id,name) VALUES('ord','Order set')");
+$svc->save('set', 'ord', 'Deep', 'Deep-short', false, true);
+$svc->save('set', 'ord', 'Deep Space', 'Deep-long', false, false);
+$applyOrd = fn (string $t): string => $svc->apply($t, $svc->effective(null, null, ['ord']), false)['text'];
+check('without arranging, the longer plain text wins', $applyOrd('Deep Space'), 'Deep-long');
+$ids = array_column($svc->rules('set', 'ord'), 'id', 'pattern');
+check('rules list in the order they are tried', array_column($svc->rules('set', 'ord'), 'pattern'), ['Deep Space', 'Deep']);
+$svc->move((int) $ids['Deep'], 'top');
+check('moving a rule to the top makes it win', [array_column($svc->rules('set', 'ord'), 'pattern'), $applyOrd('Deep Space')], [['Deep', 'Deep Space'], 'Deep-short Space']);
+$svc->move((int) $ids['Deep'], 'down');
+check('moving it down puts the longer rule first again', [array_column($svc->rules('set', 'ord'), 'pattern'), $applyOrd('Deep Space')], [['Deep Space', 'Deep'], 'Deep-long']);
+$svc->move((int) $ids['Deep Space'], 'down');
+check('up and down swap neighbours', array_column($svc->rules('set', 'ord'), 'pattern'), ['Deep', 'Deep Space']);
+$svc->resetOrder('set', 'ord');
+check('resetting forgets the arrangement', array_column($svc->rules('set', 'ord'), 'pattern'), ['Deep Space', 'Deep']);
+$svc->save('set', 'ord', '\bDeep\b', 'rx', false, true, '', 'regex');
+$rxId = (int) array_column($svc->rules('set', 'ord'), 'id', 'pattern')['\bDeep\b'];
+check('a pattern rule is tried after plain text rules until arranged', array_column($svc->rules('set', 'ord'), 'pattern')[2], '\bDeep\b');
+$svc->move($rxId, 'top');
+check('an arranged pattern rule can go first', $applyOrd('Deep Space'), 'rx Space');
+
 @unlink($db);
 echo $failures === 0 ? "\nall passed\n" : "\n$failures failed\n";
 exit($failures === 0 ? 0 : 1);

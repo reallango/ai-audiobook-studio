@@ -132,16 +132,23 @@ $explain = [
     </details>
 
     <?php if ($rules): ?>
+      <p class="pron-order-hint">Rules are tried from the top. When two rules match at the same place, the one higher in this list is used. Until you move a rule, plain text rules go longest first, then pattern rules. A rule added later goes to the bottom of an arranged list.
+        <form method="post" class="inline-form"><?= $hidden() ?><input type="hidden" name="action" value="reset_order"><button type="submit" class="link-button">reset the order</button></form></p>
       <table class="pron-table">
         <thead><tr><th>Written</th><th>Spoken</th><th>Matching</th><th>Note</th><th></th></tr></thead>
         <tbody>
         <?php foreach ($rules as $r): ?>
-          <tr class="<?= (int) $r['enabled'] ? '' : 'off' ?>">
+          <tr id="rule-<?= (int) $r['id'] ?>" class="<?= (int) $r['enabled'] ? '' : 'off' ?>">
             <td><code><?= e($r['pattern']) ?></code></td>
             <td><?php if ($r['replacement'] === ''): ?><em>(removed from narration)</em><?php else: ?><code><?= e($r['replacement']) ?></code><?php endif; ?></td>
             <td><?= ['word' => 'whole word', 'anywhere' => 'anywhere', 'regex' => 'pattern'][PronunciationService::typeOf($r)] ?? 'whole word' ?>, <?= (int) $r['case_sensitive'] ? 'match case' : 'any case' ?></td>
             <td><?= e($r['note']) ?></td>
             <td class="pron-actions">
+              <span class="pron-order">
+                <?php foreach (['top' => ['first', 'Move to the top'], 'up' => ['↑', 'Move up'], 'down' => ['↓', 'Move down']] as $how => [$mark, $tip]): ?>
+                  <form method="post"><?= $hidden() ?><input type="hidden" name="action" value="move_rule"><input type="hidden" name="id" value="<?= (int) $r['id'] ?>"><input type="hidden" name="how" value="<?= $how ?>"><button type="submit" class="link-button" title="<?= $tip ?>" aria-label="<?= $tip ?>"><?= $mark ?></button></form>
+                <?php endforeach; ?>
+              </span>
               <button type="button" class="link-button" data-wb-load data-written="<?= e((string) $r['pattern']) ?>" data-spoken="<?= e((string) $r['replacement']) ?>" data-layer="<?= e($layer . '|' . $ref) ?>" data-label="rule in this layer" data-case="<?= (int) $r['case_sensitive'] ?>" data-whole="<?= (int) $r['whole_word'] ?>" data-match="<?= e(PronunciationService::typeOf($r)) ?>">try</button>
               <details class="rule-transfer"><summary>move or copy</summary>
                 <form method="post"><?= $hidden() ?><input type="hidden" name="action" value="transfer_rule"><input type="hidden" name="id" value="<?= (int) $r['id'] ?>">

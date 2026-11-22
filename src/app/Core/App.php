@@ -76,6 +76,13 @@ final class App
                         $result = $svc->transfer((int) ($_POST['id'] ?? 0), $toScope, $toRef, $move);
                         self::flash('success', ($move ? 'Moved' : 'Copied') . ' the rule to ' . $svc->layerName($toScope, $toRef) . ($result === 'replaced' ? ', replacing the rule with the same written form there' : '') . '.');
                         break;
+                    case 'move_rule':
+                        $svc->move((int) ($_POST['id'] ?? 0), (string) ($_POST['how'] ?? ''));
+                        break;
+                    case 'reset_order':
+                        $svc->resetOrder($layer, $ref);
+                        self::flash('success', 'Order reset: plain text rules longest first, then pattern rules.');
+                        break;
                     case 'delete_rule':
                         $svc->delete((int) ($_POST['id'] ?? 0));
                         self::flash('success', 'Rule deleted.');
@@ -159,8 +166,13 @@ final class App
     {
         $project = (string) ($_GET['project'] ?? '');
         $match = (string) ($_GET['match'] ?? '');
-        $sentences = (new NarrationService())->exampleSentences($project !== '' ? $project : null, (string) ($_GET['q'] ?? ''), ($_GET['whole'] ?? '1') !== '0', ($_GET['case'] ?? '0') === '1', 60, in_array($match, PronunciationService::MATCH_TYPES, true) ? $match : null);
-        self::json(['ok' => true, 'sentences' => $sentences, 'sentence' => $sentences[0] ?? null]);
+        $hits = (new NarrationService())->exampleHits($project !== '' ? $project : null, (string) ($_GET['q'] ?? ''), ($_GET['whole'] ?? '1') !== '0', ($_GET['case'] ?? '0') === '1', 60, in_array($match, PronunciationService::MATCH_TYPES, true) ? $match : null);
+        $sentences = array_column($hits, 'sentence');
+        $where = array_map(static fn (array $h): array => [
+            'url' => base_url('chapter-review') . '&id=' . rawurlencode($h['project']) . '&section=' . rawurlencode($h['section']) . '&b=' . rawurlencode($h['block']),
+            'label' => $h['chapter'] !== '' ? $h['chapter'] : 'the book',
+        ], $hits);
+        self::json(['ok' => true, 'sentences' => $sentences, 'where' => $where, 'sentence' => $sentences[0] ?? null]);
     }
 
     /** GET ?page=rulesets-regex&pattern=...&case=0|1&project=ID -> {valid, error, count, capped, examples:[{before,match,after}]}: a live check of a regex against the book. */

@@ -39,3 +39,22 @@
     }
   });
 })();
+
+// After moving a rule the page reloads; bring that rule back into view so the list does not jump to the top.
+(function () {
+  try {
+    document.addEventListener('submit', event => {
+      const form = event.target;
+      const action = form.elements && form.elements.action ? form.elements.action.value : '';
+      if (action === 'move_rule' && form.elements.id) sessionStorage.setItem('pronMovedRule', form.elements.id.value);
+    });
+    const id = sessionStorage.getItem('pronMovedRule');
+    if (!id) return;
+    sessionStorage.removeItem('pronMovedRule');
+    const row = document.getElementById('rule-' + id);
+    if (!row) return;
+    row.scrollIntoView({block: 'center'});
+    row.classList.add('just-moved');
+    setTimeout(() => row.classList.remove('just-moved'), 2500);
+  } catch (error) { /* storage unavailable: the list simply reloads at the top */ }
+})();

@@ -25,7 +25,60 @@ final class PronunciationService
         $this->assertLayer($scope, $ref);
         $s = $this->db()->prepare('SELECT * FROM pronunciation_rules WHERE scope=:s AND scope_ref=:r ORDER BY pattern COLLATE NOCASE');
         $s->execute(['s' => $scope, 'r' => $ref]);
-        return $s->fetchAll();
+        return self::order($s->fetchAll());
+    }
+
+    /**
+     * The order rules are tried in, which decides between two rules that match at the same place.
+     * Arranged rules (position above 0) come first, a higher layer's before a lower one's, in their saved order. The rest
+     * follow as before: plain-text rules longest first, then pattern rules.
+     * @param list<array<string,mixed>> $rules
+     * @return list<array<string,mixed>>
+     */
+    public static function order(array $rules): array
+    {
+        $rules = array_values($rules);
+        usort($rules, static function (array $a, array $b): int {
+            $pa = (int) ($a['position'] ?? 0);
+            $pb = (int) ($b['position'] ?? 0);
+            if (($pa > 0) !== ($pb > 0)) return $pa > 0 ? -1 : 1;
+            if ($pa > 0) return [(int) ($b['rank'] ?? 0), $pa, (int) ($a['id'] ?? 0)] <=> [(int) ($a['rank'] ?? 0), $pb, (int) ($b['id'] ?? 0)];
+            $ra = self::typeOf($a) === 'regex';
+            $rb = self::typeOf($b) === 'regex';
+            if ($ra !== $rb) return $ra ? 1 : -1;
+            if (!$ra) return mb_strlen((string) $b['pattern']) <=> mb_strlen((string) $a['pattern']);
+            return [(int) ($b['rank'] ?? 0), (int) ($b['id'] ?? 0)] <=> [(int) ($a['rank'] ?? 0), (int) ($a['id'] ?? 0)];
+        });
+        return $rules;
+    }
+
+    /** Moves a rule within its layer: "up", "down" or "top". The layer's order is saved as it is tried, so the move is exact. */
+    public function move(int $ruleId, string $how): void
+    {
+        $s = $this->db()->prepare('SELECT scope, scope_ref FROM pronunciation_rules WHERE id=:id');
+        $s->execute(['id' => $ruleId]);
+        $row = $s->fetch();
+        if (!$row) throw new InvalidArgumentException('That rule no longer exists.');
+        $list = $this->rules((string) $row['scope'], (string) $row['scope_ref']);
+        $at = null;
+        foreach ($list as $i => $r) if ((int) $r['id'] === $ruleId) $at = $i;
+        if ($at === null) return;
+        $to = match ($how) { 'up' => max(0, $at - 1), 'down' => min(count($list) - 1, $at + 1), 'top' => 0, default => throw new InvalidArgumentException('Unknown move.') };
+        if ($to === $at && (int) $list[$at]['position'] > 0) return;
+        $moved = array_splice($list, $at, 1);
+        array_splice($list, $to, 0, $moved);
+        $db = $this->db();
+        $db->beginTransaction();
+        $u = $db->prepare('UPDATE pronunciation_rules SET position=:p WHERE id=:id');
+        foreach ($list as $i => $r) $u->execute(['p' => $i + 1, 'id' => (int) $r['id']]);
+        $db->commit();
+    }
+
+    /** Forgets the arranged order of a layer: rules go back to plain text longest first, then patterns. */
+    public function resetOrder(string $scope, string $ref = ''): void
+    {
+        $this->assertLayer($scope, $ref);
+        $this->db()->prepare('UPDATE pronunciation_rules SET position=0 WHERE scope=:s AND scope_ref=:r')->execute(['s' => $scope, 'r' => $ref]);
     }
 
     /** Adds a rule, or replaces the spoken form of an existing rule with the same pattern in that layer. */
@@ -310,29 +363,25 @@ final class PronunciationService
     {
         $text = str_replace(["\u{2019}", "\u{2018}"], "'", $text);
         if ($effective === [] && !$normalizeCaps) return ['text' => $text, 'hits' => [], 'pieces' => $text === '' ? [] : [self::plainPiece($text, 0)]];
-        $rules = array_values($effective);
-        $literal = array_values(array_filter($rules, static fn (array $r): bool => self::typeOf($r) !== 'regex'));
-        $regexRules = array_values(array_filter($rules, static fn (array $r): bool => self::typeOf($r) === 'regex'));
-        usort($literal, static fn (array $a, array $b): int => mb_strlen((string) $b['pattern']) <=> mb_strlen((string) $a['pattern']));
-        // Literal rules are tried first (longest first), then regex rules, a higher layer's before a lower one's.
-        usort($regexRules, static fn (array $a, array $b): int => [(int) ($b['rank'] ?? 0), (int) ($b['id'] ?? 0)] <=> [(int) ($a['rank'] ?? 0), (int) ($a['id'] ?? 0)]);
-
+        // Rules are tried in their order (see order()); at any one place in the text the first that matches wins.
         $parts = [];
         $byKey = [];
-        foreach ($literal as $rule) {
+        $regexByGroup = [];
+        $rx = 0;
+        foreach (self::order(array_values($effective)) as $rule) {
+            if (self::typeOf($rule) === 'regex') {
+                $name = '_rx' . $rx++;
+                $inner = self::regexBody((string) $rule['pattern']);
+                $parts[] = '(?<' . $name . '>' . ((int) $rule['case_sensitive'] === 1 ? '(?:' . $inner . ')' : '(?i:' . $inner . ')') . ')';
+                $regexByGroup[$name] = $rule;
+                continue;
+            }
             $body = preg_quote((string) $rule['pattern'], '/');
             if ((int) $rule['case_sensitive'] !== 1) $body = '(?i:' . $body . ')';
             // A whole-word rule also covers the possessive: a rule for Bajor handles Bajor's and BAJOR'S too.
             if (self::typeOf($rule) === 'word') $body = '(?<![\p{L}\p{N}_\'])' . $body . '(?:\'[sS])?(?![\p{L}\p{N}_\'])';
             $parts[] = $body;
             $byKey[mb_strtolower((string) $rule['pattern'])] = $rule;
-        }
-        $regexByGroup = [];
-        foreach ($regexRules as $i => $rule) {
-            $name = '_rx' . $i;
-            $inner = self::regexBody((string) $rule['pattern']);
-            $parts[] = '(?<' . $name . '>' . ((int) $rule['case_sensitive'] === 1 ? '(?:' . $inner . ')' : '(?i:' . $inner . ')') . ')';
-            $regexByGroup[$name] = $rule;
         }
         // Last alternative, so any rule wins over it: an ALL-CAPS word that no rule covers (Kokoro would spell it out).
         if ($normalizeCaps) {

@@ -42,6 +42,7 @@
 
   // ----- examples from the book: sentences where the rule would really apply, with previous and next -----
   const countLabel = field('[data-wb-count]');
+  const whereLink = field('[data-wb-where]');
   const prevButton = field('[data-wb-prev]');
   const nextButton = field('[data-wb-next]');
   let examples = {key: '', list: [], index: -1};
@@ -50,6 +51,11 @@
     if (!countLabel) return;
     const n = examples.list.length;
     countLabel.textContent = !examples.key ? 'no example yet' : (n === 0 ? 'not in the book' : (examples.index >= 0 ? `example ${examples.index + 1} of ${n}${n >= 60 ? '+' : ''}` : `${n}${n >= 60 ? '+' : ''} examples`));
+    if (whereLink) {
+      const spot = examples.index >= 0 && examples.where ? examples.where[examples.index] : null;
+      whereLink.hidden = !spot;
+      if (spot) { whereLink.href = spot.url; whereLink.textContent = 'Open in the book: ' + spot.label; }
+    }
     if (prevButton) prevButton.disabled = n < 2;
     if (nextButton) nextButton.disabled = n < 2;
   }
@@ -65,7 +71,7 @@
       const base = wb.dataset.example;
       const url = `${base}${base.includes('?') ? '&' : '?'}project=${encodeURIComponent(wb.dataset.project || '')}&q=${encodeURIComponent(word)}&whole=${whole && !whole.checked ? 0 : 1}&case=${caseFlag}${matchParam()}`;
       const reply = await (await fetch(url, {credentials: 'same-origin'})).json();
-      examples = {key, list: Array.isArray(reply.sentences) ? reply.sentences : [], index: -1};
+      examples = {key, list: Array.isArray(reply.sentences) ? reply.sentences : [], where: Array.isArray(reply.where) ? reply.where : [], index: -1};
     } catch (error) {
       examples = {key, list: [], index: -1};
     }
