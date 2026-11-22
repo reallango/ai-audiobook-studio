@@ -143,6 +143,11 @@ check('set rules removed', (int) $pdo->query("SELECT COUNT(*) FROM pronunciation
 check('other layers untouched', count($svc->rules('default', '')) > 0, true);
 check('set links removed', (int) $pdo->query('SELECT COUNT(*) FROM project_pronunciation_sets')->fetchColumn(), 0);
 
+// the helper's "code like AR-556" recipe: two letters, a dash, three digits, read one character at a time
+$svc->save('default', '', '(?<![\p{L}\p{N}])([A-Za-z])([A-Za-z])-(\d)(\d)(\d)(?![\p{L}\p{N}])', '$1-$2-$3-$4-$5', false, true, '', 'regex');
+check('codes like AR-556 are spelled out', $svc->apply('An AR-556 and an sb-335.', $svc->effective(null, null))['text'], 'An A-R-5-5-6 and an s-b-3-3-5.');
+check('longer codes are left alone', $svc->apply('The AR-5567 and ARX-556.', $svc->effective(null, null), false)['text'], 'The AR-5567 and ARX-556.');
+
 @unlink($db);
 echo $failures === 0 ? "\nall passed\n" : "\n$failures failed\n";
 exit($failures === 0 ? 0 : 1);

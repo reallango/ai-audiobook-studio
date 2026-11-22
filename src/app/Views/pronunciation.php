@@ -135,6 +135,7 @@ $explain = [
             <option value="contains">Words that contain…</option>
             <option value="either">Any of these words (a, b, c)</option>
             <option value="number">A number followed by a unit (like 5kg)</option>
+            <option value="code">A code like AR-556, spelled out one character at a time</option>
             <option value="after">A word only when it follows another word</option>
           </select></label>
         <label>Text <input id="rh-text" maxlength="120" placeholder="e.g. Bajor"></label>

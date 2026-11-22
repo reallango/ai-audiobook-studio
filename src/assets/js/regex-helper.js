@@ -18,6 +18,15 @@
       case 'contains': return t ? {p: `(?<![\p{L}\p{N}'])${W}${esc(t)}${W}`, d: `Any word with “${t}” somewhere inside it.`} : null;
       case 'either': return parts.length ? {p: `(?<![\p{L}\p{N}'])(?:${parts.map(esc).join('|')})(?![\p{L}\p{N}'])`, d: `Any one of these whole words: ${parts.join(', ')}.`} : null;
       case 'number': return t || e ? {p: `(\d+)\s?${esc(e || t)}(?![\p{L}])`, d: `A number directly followed by “${e || t}” (the number is kept as $1, so you can write “$1 kilograms”).`} : null;
+      case 'code': {
+        const l = Math.min(6, Math.max(1, parseInt(t, 10) || 2)), d = Math.min(8, Math.max(1, parseInt(e, 10) || 3));
+        const nums = Array.from({length: l + d}, (_, i) => i + 1);
+        return {
+          p: '(?<![\\p{L}\\p{N}])' + '([A-Za-z])'.repeat(l) + '-' + '(\\d)'.repeat(d) + '(?![\\p{L}\\p{N}])',
+          r: nums.map(n => '$' + n).join('-'),
+          d: l + ' letter' + (l === 1 ? '' : 's') + ', a dash, then ' + d + ' digit' + (d === 1 ? '' : 's') + ' (like AR-556). Each character is spoken on its own, with dashes between them.'
+        };
+      }
       case 'after': return t && e ? {p: `(?<=${esc(e)} )${esc(t)}(?![\p{L}\p{N}'])`, d: `The word “${t}” only when it comes right after “${e}”.`} : null;
     }
     return null;
@@ -25,9 +34,9 @@
 
   function labels() {
     const r = recipe.value;
-    extraWrap.hidden = !(r === 'number' || r === 'after');
-    extraLabel.textContent = r === 'number' ? 'Unit (kg, km, …)' : 'The word before it';
-    text.placeholder = r === 'either' ? 'Bajor, Cardassia, Ferenginar' : r === 'number' ? '(or put the unit here)' : 'e.g. Bajor';
+    extraWrap.hidden = !(r === 'number' || r === 'after' || r === 'code');
+    extraLabel.textContent = r === 'number' ? 'Unit (kg, km, …)' : r === 'code' ? 'How many digits (default 3)' : 'The word before it';
+    text.placeholder = r === 'code' ? 'How many letters (default 2)' : r === 'either' ? 'Bajor, Cardassia, Ferenginar' : r === 'number' ? '(or put the unit here)' : 'e.g. Bajor';
   }
 
   async function refresh() {
@@ -64,6 +73,7 @@
     const form = document.getElementById('add');
     form.elements.pattern.value = b.p;
     form.elements.match_type.value = 'regex';
+    if (b.r) form.elements.replacement.value = b.r;
     if (form.elements.case_sensitive) form.elements.case_sensitive.checked = cs.checked;
     form.elements.replacement.focus();
     form.scrollIntoView({behavior: 'smooth', block: 'center'});
