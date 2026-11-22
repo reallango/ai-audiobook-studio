@@ -14,13 +14,15 @@ use App\Services\NarrationService;
 use App\Services\GenerationService;
 use App\Services\JobService;
 use App\Services\ChapterSettings;
+use App\Services\ExportService;
+use App\Services\AudioEncoder;
 use Throwable;
 final class App
 {
     public static function run(): void
     {
         $route=trim((string)($_GET['page']??'projects'),'/');
-        try{match($route){'api-health'=>self::json(self::health()),'diagnostics'=>self::view('diagnostics'),'projects','home',''=>self::projects(),'project-create'=>self::createProject(),'project'=>self::project(),'epub-upload'=>self::epubUpload(),'epub-analyze'=>self::epubAnalyze(),'source-sections'=>self::sourceSections(),'source-section'=>self::sourceSection(),'project-archive'=>self::archiveProject(),'project-restore'=>self::restoreProject(),'project-delete'=>self::deleteProject(),'voice-lab'=>self::voiceLab(),'voice-preview'=>self::voicePreview(),'pronunciation'=>self::pronunciation(),'pronunciation-rule'=>self::pronunciationRule(),'chapters'=>self::chapters(),'chapter-review'=>self::chapterReview(),'chapter-audio'=>self::chapterAudio(),'audio'=>self::audio(),default=>self::notFound()};}
+        try{match($route){'api-health'=>self::json(self::health()),'diagnostics'=>self::view('diagnostics'),'projects','home',''=>self::projects(),'project-create'=>self::createProject(),'project'=>self::project(),'epub-upload'=>self::epubUpload(),'epub-analyze'=>self::epubAnalyze(),'source-sections'=>self::sourceSections(),'source-section'=>self::sourceSection(),'project-archive'=>self::archiveProject(),'project-restore'=>self::restoreProject(),'project-delete'=>self::deleteProject(),'voice-lab'=>self::voiceLab(),'voice-preview'=>self::voicePreview(),'pronunciation'=>self::pronunciation(),'pronunciation-rule'=>self::pronunciationRule(),'chapters'=>self::chapters(),'chapter-review'=>self::chapterReview(),'chapter-audio'=>self::chapterAudio(),'audio'=>self::audio(),'export'=>self::export(),default=>self::notFound()};}
         catch(Throwable $error){error_log($error->__toString());http_response_code(500);self::view('error',['message'=>config('app.debug',false)?$error->getMessage():'The request could not be completed. Check the application log for details.']);}
     }
     private static function voiceLab():void
@@ -224,7 +226,15 @@ final class App
             try {
                 if (!Csrf::validate(isset($_POST['_token']) ? (string) $_POST['_token'] : null)) throw new \InvalidArgumentException('Security token expired. Try again.');
                 if ($project['status'] === 'ARCHIVED') throw new \InvalidArgumentException('Restore the project before generating audio.');
-                if ((string) ($_POST['action'] ?? '') !== 'generate_all') throw new \InvalidArgumentException('Unknown action.');
+                $action = (string) ($_POST['action'] ?? '');
+                if ($action === 'build_m4b') {
+                    set_time_limit(0);
+                    session_write_close();
+                    $built = (new ExportService())->buildM4b($projectId);
+                    self::flash('success', 'Audiobook file built with ' . (int) $built['chapter_count'] . ' chapter markers.');
+                    self::redirect('chapters', ['id' => $projectId]);
+                }
+                if ($action !== 'generate_all') throw new \InvalidArgumentException('Unknown action.');
                 $overview = $narration->overview($projectId);
                 $states = (new GenerationService())->summaries($projectId, $overview);
                 $jobs = new JobService();
@@ -246,7 +256,11 @@ final class App
         } catch (\InvalidArgumentException $error) {
             $audio = [];
         }
-        self::view('chapters', ['project' => $project, 'rows' => $rows, 'audio' => $audio, 'workerOnline' => JobService::workerOnline()]);
+        $exports = new ExportService();
+        $exportRow = $exports->exportRow($projectId);
+        $readyCount = count(array_filter($audio, static fn (array $a): bool => $a['state'] === 'ready'));
+        self::view('chapters', ['project' => $project, 'rows' => $rows, 'audio' => $audio, 'workerOnline' => JobService::workerOnline(),
+            'exportRow' => $exportRow, 'exportCurrent' => $exportRow !== null && $readyCount > 0 && $exports->isCurrent($projectId, $exportRow), 'readyCount' => $readyCount]);
     }
 
     /** One chapter: original blocks beside the narration text, per-block exclude and edit, approve. */
@@ -373,14 +387,50 @@ final class App
         }
     }
 
-    /** GET ?page=audio&id=PROJECT&kind=segment|chapter&ref=ID[&download=1]: streams a stored WAV, with Range support. */
+    /** GET ?page=audio&id=PROJECT&kind=segment|chapter&ref=ID[&download=1&name=...]: streams stored chapter or segment audio, with Range support. */
     private static function audio():void
     {
         $projectId = (string) ($_GET['id'] ?? '');
-        $kind = (string) ($_GET['kind'] ?? '');
-        $path = (new GenerationService())->audioFile($projectId, $kind, (string) ($_GET['ref'] ?? ''));
+        $path = (new GenerationService())->audioFile($projectId, (string) ($_GET['kind'] ?? ''), (string) ($_GET['ref'] ?? ''));
         if ($path === null) { self::notFound(); return; }
+        self::streamFile($path, ($_GET['download'] ?? '') === '1' ? (string) ($_GET['name'] ?? 'audio') : null);
+    }
+
+    /** GET ?page=export&id=PROJECT&kind=m4b|zip: the finished audiobook file, or a ZIP of the chapter m4a files. */
+    private static function export():void
+    {
+        $projectId = (string) ($_GET['id'] ?? '');
+        $project = (new ProjectRepository())->find($projectId);
+        if (!$project) { self::notFound(); return; }
+        $slug = trim((string) preg_replace('/[^A-Za-z0-9]+/', '-', (string) $project['title']), '-') ?: 'audiobook';
+        $exports = new ExportService();
+        $kind = (string) ($_GET['kind'] ?? '');
+        if ($kind === 'm4b') {
+            $path = $exports->m4bFile($projectId);
+            if ($path === null) { self::notFound(); return; }
+            self::streamFile($path, $slug);
+            return;
+        }
+        if ($kind === 'zip') {
+            try {
+                $zip = $exports->buildZip($projectId);
+            } catch (\InvalidArgumentException $error) {
+                self::flash('error', $error->getMessage());
+                self::redirect('chapters', ['id' => $projectId]);
+            }
+            session_write_close();
+            self::streamFile($zip, $slug . '-m4a', 'application/zip', true);
+            return;
+        }
+        self::notFound();
+    }
+
+    /** Streams a file with Range support. A name makes it a download. $delete removes the file afterwards. */
+    private static function streamFile(string $path, ?string $downloadName, ?string $mime = null, bool $delete = false):void
+    {
         session_write_close();
+        $ext = strtolower(pathinfo($path, PATHINFO_EXTENSION));
+        $mime ??= match ($ext) { 'm4a', 'm4b' => 'audio/mp4', 'wav' => 'audio/wav', 'zip' => 'application/zip', default => 'application/octet-stream' };
         $size = (int) filesize($path);
         $start = 0;
         $end = $size - 1;
@@ -391,12 +441,16 @@ final class App
             $status = 206;
         }
         http_response_code($status);
-        header('Content-Type: audio/wav');
+        header('Content-Type: ' . $mime);
         header('Accept-Ranges: bytes');
         header('Cache-Control: private, no-cache');
         if ($status === 206) header("Content-Range: bytes $start-$end/$size");
         header('Content-Length: ' . ($end - $start + 1));
-        if (($_GET['download'] ?? '') === '1') header('Content-Disposition: attachment; filename="' . preg_replace('/[^A-Za-z0-9._-]+/', '-', (string) ($_GET['name'] ?? 'audio')) . '.wav"');
+        if ($downloadName !== null) {
+            $clean = preg_replace('/[^A-Za-z0-9._-]+/', '-', $downloadName) ?: 'audio';
+            header('Content-Disposition: attachment; filename="' . $clean . ($ext !== '' && !str_ends_with(strtolower($clean), '.' . $ext) ? '.' . $ext : '') . '"');
+        }
+        set_time_limit(0);
         $h = fopen($path, 'rb');
         fseek($h, $start);
         for ($left = $end - $start + 1; $left > 0 && !feof($h); ) {
@@ -407,10 +461,11 @@ final class App
             flush();
         }
         fclose($h);
+        if ($delete) @unlink($path);
     }
 
     private static function projects():void{$show=($_GET['archived']??'')==='1';self::view('projects',['projects'=>(new ProjectRepository())->all($show),'showArchived'=>$show]);}
-    private static function createProject():void{$errors=[];$values=['title'=>'','provider'=>'kokoro','voice'=>VoiceCatalog::DEFAULT_VOICE,'bitrate'=>96];if($_SERVER['REQUEST_METHOD']==='POST'){$values=['title'=>(string)($_POST['title']??''),'provider'=>(string)($_POST['provider']??'kokoro'),'voice'=>(string)($_POST['voice']??''),'bitrate'=>(int)($_POST['bitrate']??96)];if(!Csrf::validate($_POST['_token']??null))$errors[]='Security token expired. Reload the page and try again.';if(!$errors)try{$project=(new ProjectService())->create($values['title'],$values['provider'],$values['voice'],$values['bitrate']);self::flash('success','Project created.');self::redirect('project',['id'=>$project['id']]);}catch(Throwable $error){$errors[]=$error->getMessage();}}self::view('project-create',['errors'=>$errors,'values'=>$values]);}
+    private static function createProject():void{$errors=[];$values=['title'=>'','provider'=>'kokoro','voice'=>VoiceCatalog::DEFAULT_VOICE,'bitrate'=>AudioEncoder::DEFAULT_BITRATE];if($_SERVER['REQUEST_METHOD']==='POST'){$values=['title'=>(string)($_POST['title']??''),'provider'=>(string)($_POST['provider']??'kokoro'),'voice'=>(string)($_POST['voice']??''),'bitrate'=>(int)($_POST['bitrate']??96)];if(!Csrf::validate($_POST['_token']??null))$errors[]='Security token expired. Reload the page and try again.';if(!$errors)try{$project=(new ProjectService())->create($values['title'],$values['provider'],$values['voice'],$values['bitrate']);self::flash('success','Project created.');self::redirect('project',['id'=>$project['id']]);}catch(Throwable $error){$errors[]=$error->getMessage();}}self::view('project-create',['errors'=>$errors,'values'=>$values]);}
     private static function project():void{$project=self::requireProject();$asset=(new SourceAssetRepository())->findByProject($project['id']);$analysis=new SourceAnalysisRepository();self::view('project',['project'=>$project,'sourceAsset'=>$asset,'sourceAnalyzed'=>$analysis->analyzed($project['id'])]);}
     private static function epubUpload():void{$project=self::requireProject();$repo=new SourceAssetRepository();if($repo->findByProject($project['id'])){self::flash('error','This project already has an immutable source EPUB.');self::redirect('project',['id'=>$project['id']]);}$errorMessage=null;if($_SERVER['REQUEST_METHOD']==='POST'){self::requireCsrf();try{$asset=(new EpubUploadService())->upload($project['id'],$_FILES['epub']??[]);self::flash('success','EPUB stored with SHA-256 '.$asset['sha256'].'.');self::redirect('project',['id'=>$project['id']]);}catch(Throwable $error){$errorMessage=$error->getMessage();}}self::view('epub-upload',['project'=>$project,'errorMessage'=>$errorMessage]);}
     private static function epubAnalyze():void{self::requirePost();self::requireCsrf();$project=self::requireProject();try{$result=(new EpubAnalysisService())->analyze($project['id']);self::flash('success','Created '.$result['sections'].' source sections and '.$result['blocks'].' source blocks.');self::redirect('source-sections',['id'=>$project['id']]);}catch(Throwable $error){self::flash('error',$error->getMessage());self::redirect('project',['id'=>$project['id']]);}}

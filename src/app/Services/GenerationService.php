@@ -20,10 +20,14 @@ final class GenerationService
     /** @var null|callable(string,string,float):string */
     private $synth;
 
+    /** @var null|callable(string,string,int,array<string,string>):void */
+    private $encode;
+
     /** @param null|callable(string,string,float):string $synth text, voice, speed -> WAV bytes (tests inject a fake) */
-    public function __construct(?callable $synth = null)
+    public function __construct(?callable $synth = null, ?callable $encode = null)
     {
         $this->synth = $synth;
+        $this->encode = $encode;
     }
 
     /**
@@ -118,24 +122,39 @@ final class GenerationService
         return ['segment' => $after->fetch(), 'counts' => $this->counts($logicalId)];
     }
 
-    /** Joins all segment audio into the chapter WAV. @return array<string,mixed> */
+    /**
+     * Joins the finished segments into the chapter audio: a WAV first (the quality source), then AAC mono at the
+     * project's bitrate. The WAV is removed afterwards unless audio.retain_wav is set.
+     * @return array<string,mixed>
+     */
     public function assemble(string $projectId, string $logicalId): array
     {
         $this->assertChapter($projectId, $logicalId);
+        [$project] = $this->settings($projectId, $logicalId);
         $rows = $this->segments($logicalId);
         if ($rows === []) throw new InvalidArgumentException('Prepare the segments first.');
         $missing = count(array_filter($rows, static fn (array $r): bool => $r['status'] !== 'DONE'));
         if ($missing > 0) throw new InvalidArgumentException("$missing segment(s) still need audio.");
+        $kbps = $this->bitrate($project);
 
         $parts = array_map(fn (array $r): array => ['path' => $this->absolute((string) $r['audio_relpath']), 'gap_ms' => (int) $r['gap_ms']], $rows);
-        $rel = $projectId . '/audio/' . $logicalId . '/chapter.wav';
-        $result = WavFile::join($parts, $this->absolute($rel));
+        $dir = $projectId . '/audio/' . $logicalId;
+        $wavRel = $dir . '/chapter.wav';
+        $m4aRel = $dir . '/chapter.m4a';
+        $result = WavFile::join($parts, $this->absolute($wavRel));
+        try {
+            $encode = $this->encode ?? [new AudioEncoder(), 'encode'];
+            $encode($this->absolute($wavRel), $this->absolute($m4aRel), $kbps, $this->tags($projectId, $logicalId));
+        } finally {
+            if (!(bool) config('audio.retain_wav', false)) @unlink($this->absolute($wavRel));
+        }
+        $size = (int) @filesize($this->absolute($m4aRel));
         $this->db()->prepare(
-            'INSERT INTO chapter_audio(logical_section_id,audio_relpath,duration_ms,byte_size,segment_signature) VALUES(:l,:r,:d,:b,:s)
+            'INSERT INTO chapter_audio(logical_section_id,audio_relpath,duration_ms,byte_size,segment_signature,format,bitrate_kbps) VALUES(:l,:r,:d,:b,:s,:f,:k)
              ON CONFLICT(logical_section_id) DO UPDATE SET audio_relpath=excluded.audio_relpath, duration_ms=excluded.duration_ms,
-               byte_size=excluded.byte_size, segment_signature=excluded.segment_signature, built_at=CURRENT_TIMESTAMP'
-        )->execute(['l' => $logicalId, 'r' => $rel, 'd' => $result['duration_ms'], 'b' => $result['byte_size'], 's' => $this->signature($rows)]);
-        return $result;
+               byte_size=excluded.byte_size, segment_signature=excluded.segment_signature, format=excluded.format, bitrate_kbps=excluded.bitrate_kbps, built_at=CURRENT_TIMESTAMP'
+        )->execute(['l' => $logicalId, 'r' => $m4aRel, 'd' => $result['duration_ms'], 'b' => $size, 's' => $this->signature($rows, $kbps), 'f' => 'm4a', 'k' => $kbps]);
+        return ['duration_ms' => $result['duration_ms'], 'byte_size' => $size, 'bitrate_kbps' => $kbps];
     }
 
     /**
@@ -146,7 +165,7 @@ final class GenerationService
      */
     public function summaries(string $projectId, array $overview): array
     {
-        [, $projectVoice, $projectSpeed] = $this->settings($projectId);
+        [$project, $projectVoice, $projectSpeed] = $this->settings($projectId);
         $overrides = ChapterSettings::forProject($projectId);
         $db = $this->db();
         $ids = array_column($overview, 'id');
@@ -178,8 +197,8 @@ final class GenerationService
                 $settingsOk = count(array_filter($rows, static fn (array $r): bool => $r['voice'] !== $voice || abs((float) $r['speed'] - $speed) > 0.0001)) === 0;
                 $upToDate = $wanted === $have && $settingsOk;
                 if ($job && in_array($job['status'], ['QUEUED', 'RUNNING'], true)) $info['state'] = 'working';
-                elseif ($job && $job['status'] === 'FAILED' && !($upToDate && isset($audio[$id]) && $audio[$id]['segment_signature'] === $this->signature($rows))) $info['state'] = 'failed';
-                elseif (isset($audio[$id])) $info['state'] = $upToDate && $audio[$id]['segment_signature'] === $this->signature($rows) ? 'ready' : 'outdated';
+                elseif ($job && $job['status'] === 'FAILED' && !($upToDate && isset($audio[$id]) && $audio[$id]['segment_signature'] === $this->signature($rows, $this->bitrate($project)))) $info['state'] = 'failed';
+                elseif (isset($audio[$id])) $info['state'] = $upToDate && $audio[$id]['segment_signature'] === $this->signature($rows, $this->bitrate($project)) ? 'ready' : 'outdated';
                 elseif ($rows !== []) $info['state'] = $upToDate ? 'partial' : 'outdated';
                 else $info['state'] = 'none';
             }
@@ -242,7 +261,8 @@ final class GenerationService
             'prepared' => $rows !== [],
             'needs_prepare' => $chapter['status'] === 'approved' && ($current !== $have || !$settingsMatch),
             'chapter_audio' => $audioRow,
-            'audio_stale' => $audioRow !== null && $audioRow['segment_signature'] !== $this->signature($rows),
+            'audio_stale' => $audioRow !== null && $audioRow['segment_signature'] !== $this->signature($rows, $this->bitrate($project)),
+            'bitrate_kbps' => $this->bitrate($project),
             'ready_to_assemble' => $rows !== [] && $counts['done'] === $counts['total'],
         ];
     }
@@ -287,10 +307,35 @@ final class GenerationService
         return $c;
     }
 
-    /** @param array<int,array<string,mixed>> $rows */
-    private function signature(array $rows): string
+    /** @param array<string,mixed> $project */
+    private function bitrate(array $project): int
     {
-        return hash('sha256', implode('|', array_map(static fn (array $r): string => $r['id'] . ':' . $r['text_sha256'] . ':' . $r['voice'] . ':' . $r['speed'] . ':' . $r['gap_ms'] . ':' . $r['status'], $rows)));
+        $kbps = (int) ($project['audio_bitrate_kbps'] ?? AudioEncoder::DEFAULT_BITRATE);
+        return AudioEncoder::validBitrate($kbps) ? $kbps : AudioEncoder::DEFAULT_BITRATE;
+    }
+
+    /** Tags written into the chapter file: book, author, chapter title and track number. @return array<string,string> */
+    private function tags(string $projectId, string $logicalId): array
+    {
+        $db = $this->db();
+        $p = $db->prepare('SELECT p.title AS book, m.creator AS author FROM projects p LEFT JOIN source_metadata m ON m.project_id=p.id WHERE p.id=:p');
+        $p->execute(['p' => $projectId]);
+        $book = $p->fetch() ?: ['book' => '', 'author' => ''];
+        $c = $db->prepare('SELECT title, position FROM logical_sections WHERE id=:l');
+        $c->execute(['l' => $logicalId]);
+        $chapter = $c->fetch() ?: ['title' => '', 'position' => 0];
+        $n = $db->prepare('SELECT COUNT(*) FROM logical_sections WHERE project_id=:p AND included=1');
+        $n->execute(['p' => $projectId]);
+        return [
+            'title' => (string) $chapter['title'], 'album' => (string) $book['book'], 'artist' => (string) ($book['author'] ?? ''),
+            'genre' => 'Audiobook', 'track' => ((int) $chapter['position']) . '/' . (int) $n->fetchColumn(),
+        ];
+    }
+
+    /** @param array<int,array<string,mixed>> $rows */
+    private function signature(array $rows, int $kbps = 0): string
+    {
+        return hash('sha256', 'kbps' . $kbps . '|' . implode('|', array_map(static fn (array $r): string => $r['id'] . ':' . $r['text_sha256'] . ':' . $r['voice'] . ':' . $r['speed'] . ':' . $r['gap_ms'] . ':' . $r['status'], $rows)));
     }
 
     /** @return array{0:array<string,mixed>,1:string,2:float} */

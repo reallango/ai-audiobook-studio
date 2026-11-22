@@ -48,7 +48,13 @@ $fake = function (string $text, string $voice, float $speed) use (&$calls, &$fai
     $data = str_repeat(pack('v', 500), $n);
     return 'RIFF' . pack('V', 36 + strlen($data)) . 'WAVEfmt ' . pack('VvvVVvv', 16, 1, 1, 24000, 48000, 2, 16) . 'data' . pack('V', strlen($data)) . $data;
 };
-$gen = new GenerationService($fake);
+// fake ffmpeg: writes a stand-in m4a and remembers how it was asked to encode
+$encoded = [];
+$fakeEncode = function (string $wav, string $m4a, int $kbps, array $meta) use (&$encoded): void {
+    $encoded[] = ['wav_existed' => is_file($wav), 'kbps' => $kbps, 'meta' => $meta];
+    file_put_contents($m4a, 'FAKE-AAC-' . $kbps . str_repeat('x', 200));
+};
+$gen = new GenerationService($fake, $fakeEncode);
 $narr = new NarrationService();
 
 check('cannot prepare an unapproved chapter', expectError(fn () => $gen->prepare('p', 'L')), 'rejected');
@@ -71,7 +77,18 @@ $res = $gen->assemble('p', 'L');
 $expectedMs = (int) round(array_sum(array_map(fn ($s) => strlen($s['text']) * 10, $st['segments'])) + 5 * 800);
 check('chapter audio length = segments + 5 paragraph pauses', $res['duration_ms'], $expectedMs);
 $file = $gen->audioFile('p', 'chapter', 'L');
-check('chapter file is a valid WAV', $file !== null && WavFile::info($file)['duration_ms'] === $expectedMs, true);
+check('the chapter file is the m4a, and the joined WAV was removed', [$file !== null && str_ends_with($file, 'chapter.m4a'), is_file(dirname((string) $file) . '/chapter.wav')], [true, false]);
+check('the encoder saw the joined WAV, the project bitrate and tags', [$encoded[0]['wav_existed'], $encoded[0]['kbps'], $encoded[0]['meta']['title'], $encoded[0]['meta']['album'], $encoded[0]['meta']['track']], [true, 96, 'Chapter 1', 'Book', '1/1']);
+$pdo->exec('UPDATE projects SET audio_bitrate_kbps=32');
+check('changing the quality marks the audio out of date', $gen->status('p', 'L')['audio_stale'], true);
+$gen->assemble('p', 'L');
+check('and rebuilding encodes at the new bitrate', [end($encoded)['kbps'], $gen->status('p', 'L')['audio_stale'], $gen->status('p', 'L')['chapter_audio']['bitrate_kbps']], [32, false, 32]);
+$pdo->exec('UPDATE projects SET audio_bitrate_kbps=50');
+$gen->status('p', 'L');
+$gen->assemble('p', 'L');
+check('an unsupported stored bitrate falls back to the default', end($encoded)['kbps'], 64);
+$pdo->exec('UPDATE projects SET audio_bitrate_kbps=96');
+$gen->assemble('p', 'L');
 check('segment files can be fetched too', $gen->audioFile('p', 'segment', (string) $st['segments'][0]['id']) !== null, true);
 check('another project cannot fetch it', $gen->audioFile('other', 'chapter', 'L'), null);
 check('audio is fresh after assembling', $gen->status('p', 'L')['audio_stale'], false);

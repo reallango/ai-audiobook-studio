@@ -74,7 +74,7 @@ require APP_ROOT . '/app/Views/layout-top.php';
       <datalist id="kokoro-voices"><?php foreach (\App\Services\VoiceCatalog::all() as $voiceName): ?><option value="<?= e($voiceName) ?>"><?php endforeach; ?></datalist>
       <label>Speed <small>0.5 to 2.0, 1.0 is normal</small><input data-setting="speed" type="number" min="0.5" max="2" step="0.05" value="<?= e(number_format($speedValue, 2, '.', '')) ?>" required <?= $archived ? 'disabled' : '' ?>></label>
       <label class="check"><input type="checkbox" data-setting="normalize_caps" <?= $capsValue ? 'checked' : '' ?> <?= $archived ? 'disabled' : '' ?>> Say ALL-CAPS words as normal words (STARBASE as Starbase). A pronunciation rule always wins.</label>
-      <label>Audio quality<select data-setting="bitrate" <?= $archived ? 'disabled' : '' ?>><option value="64" <?= $bitrateValue === 64 ? 'selected' : '' ?>>64 kbps AAC, draft</option><option value="96" <?= $bitrateValue === 96 ? 'selected' : '' ?>>96 kbps AAC, default</option><option value="128" <?= $bitrateValue === 128 ? 'selected' : '' ?>>128 kbps AAC, high</option></select></label>
+      <label>Audio quality <small>mono AAC (m4a, m4b)</small><select data-setting="bitrate" <?= $archived ? 'disabled' : '' ?>><?php foreach (\App\Services\AudioEncoder::BITRATES as $kbps => $label): ?><option value="<?= (int) $kbps ?>" <?= $bitrateValue === $kbps ? 'selected' : '' ?>><?= (int) $kbps ?> kbps, <?= e(strtolower($label)) ?></option><?php endforeach; ?></select></label>
       <?php if (!$archived): ?><div class="settings-actions"><span data-settings-state>All changes saved</span><button type="button" data-save-settings disabled>Save settings</button></div><?php endif; ?>
     </form>
   </article>

@@ -87,7 +87,7 @@ $audioUrl = static fn (string $kind, string $ref, array $extra = []): string => 
       <div class="audio-chapter">
         <h3>Chapter audio <?= $audio['audio_stale'] ? '<span class="chapter-status changed">out of date, rebuild it</span>' : '' ?></h3>
         <audio controls preload="none" src="<?= e($audioUrl('chapter', (string) $section['id'])) ?>"></audio>
-        <p><?= e($mmss((int) $ca['duration_ms'])) ?> long, <?= e(number_format($ca['byte_size'] / 1048576, 1)) ?> MB WAV,
+        <p><?= e($mmss((int) $ca['duration_ms'])) ?> long, <?= e(number_format($ca['byte_size'] / 1048576, 1)) ?> MB <?= $ca['format'] === 'm4a' ? 'AAC mono, ' . (int) $ca['bitrate_kbps'] . ' kbps' : 'WAV (older audio, generate again to get AAC)' ?>,
           <a href="<?= e($audioUrl('chapter', (string) $section['id'], ['download' => 1, 'name' => 'chapter-' . str_pad((string) $section['position'], 3, '0', STR_PAD_LEFT) . '-' . preg_replace('/[^a-z0-9]+/i', '-', (string) $section['title'])])) ?>">download</a></p>
       </div>
     <?php endif; ?>

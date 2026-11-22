@@ -16,7 +16,7 @@ final class ProjectService
     {
         $title = trim(preg_replace('/\s+/u', ' ', $title) ?? '');
         if ($title === '' || mb_strlen($title) > 200) throw new InvalidArgumentException('Title is required and must be 200 characters or fewer.');
-        if (!in_array($bitrate, [64,96,128], true)) throw new InvalidArgumentException('Select a supported audio quality.');
+        if (!in_array($bitrate, array_keys(AudioEncoder::BITRATES), true)) throw new InvalidArgumentException('Select a supported audio quality.');
         $provider = trim($provider) ?: 'kokoro'; $voice = trim($voice);
         if (mb_strlen($provider) > 100 || mb_strlen($voice) > 100) throw new InvalidArgumentException('Provider or voice value is too long.');
 

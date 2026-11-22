@@ -45,7 +45,8 @@ $fake = function (string $text) use (&$calls, &$failOn): string {
     $data = str_repeat(pack('v', 500), strlen($text) * 240);
     return 'RIFF' . pack('V', 36 + strlen($data)) . 'WAVEfmt ' . pack('VvvVVvv', 16, 1, 1, 24000, 48000, 2, 16) . 'data' . pack('V', strlen($data)) . $data;
 };
-$jobs = new JobService(new GenerationService($fake));
+$fakeEncode = function (string $wav, string $m4a, int $kbps, array $meta): void { file_put_contents($m4a, 'FAKE-AAC' . str_repeat('x', 100)); };
+$jobs = new JobService(new GenerationService($fake, $fakeEncode));
 $narr = new NarrationService();
 
 check('cannot queue an unapproved chapter', expectError(fn () => $jobs->enqueue('p', 'L')), 'rejected');
@@ -57,7 +58,7 @@ check('queued', $job['status'], 'QUEUED');
 check('queuing again returns the same job', $jobs->enqueue('p', 'L')['id'], $job['id']);
 check('worker runs it to the end', $jobs->runNext(), true);
 $job = $jobs->forChapter('L');
-$gen = new GenerationService($fake);
+$gen = new GenerationService($fake, $fakeEncode);
 check('job done, chapter audio built', [$job['status'], $gen->status('p', 'L')['chapter_audio'] !== null, $calls], ['DONE', true, 6]);
 check('queue is empty again', $jobs->runNext(), false);
 

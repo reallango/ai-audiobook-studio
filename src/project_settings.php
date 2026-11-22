@@ -52,7 +52,7 @@ try {
     if (mb_strlen($voice) > 100) {
         throw new InvalidArgumentException('Voice must contain 100 characters or fewer.');
     }
-    if (!in_array($bitrate, [64, 96, 128], true)) {
+    if (!in_array($bitrate, array_keys(\App\Services\AudioEncoder::BITRATES), true)) {
         throw new InvalidArgumentException('Select a supported audio quality.');
     }
     $normalizeCaps = array_key_exists('normalize_caps', $payload) ? (empty($payload['normalize_caps']) ? 0 : 1) : (int) ($project['normalize_caps'] ?? 1);
