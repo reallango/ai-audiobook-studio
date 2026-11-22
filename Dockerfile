@@ -2,7 +2,7 @@ FROM webdevops/php-nginx:8.3
 
 # ffmpeg is used later to join WAV segments into chapters.
 RUN apt-get update \
- && apt-get install -y --no-install-recommends ffmpeg \
+ && apt-get install -y --no-install-recommends ffmpeg wamerican \
  && rm -rf /var/lib/apt/lists/*
 
 ENV WEB_DOCUMENT_ROOT=/app \

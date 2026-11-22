@@ -11,6 +11,7 @@ use App\Services\KokoroClient;
 use App\Services\VoiceCatalog;
 use App\Services\PronunciationService;
 use App\Services\NarrationService;
+use App\Services\TextCheckService;
 use App\Services\GenerationService;
 use App\Services\JobService;
 use App\Services\ChapterSettings;
@@ -22,7 +23,7 @@ final class App
     public static function run(): void
     {
         $route=trim((string)($_GET['page']??'projects'),'/');
-        try{match($route){'api-health'=>self::json(self::health()),'diagnostics'=>self::view('diagnostics'),'projects','home',''=>self::projects(),'project-create'=>self::createProject(),'project'=>self::project(),'epub-upload'=>self::epubUpload(),'epub-analyze'=>self::epubAnalyze(),'source-sections'=>self::sourceSections(),'source-section'=>self::sourceSection(),'project-archive'=>self::archiveProject(),'project-restore'=>self::restoreProject(),'project-delete'=>self::deleteProject(),'voice-lab'=>self::voiceLab(),'voice-preview'=>self::voicePreview(),'pronunciation'=>self::pronunciation(),'rulesets'=>self::pronunciation(),'pronunciation-rule'=>self::pronunciationRule(),'pronunciation-example'=>self::pronunciationExample(),'rulesets-regex'=>self::regexPreview(),'chapters'=>self::chapters(),'chapter-review'=>self::chapterReview(),'chapter-audio'=>self::chapterAudio(),'chapter-text'=>self::chapterText(),'audio'=>self::audio(),'export'=>self::export(),default=>self::notFound()};}
+        try{match($route){'api-health'=>self::json(self::health()),'diagnostics'=>self::view('diagnostics'),'projects','home',''=>self::projects(),'project-create'=>self::createProject(),'project'=>self::project(),'epub-upload'=>self::epubUpload(),'epub-analyze'=>self::epubAnalyze(),'source-sections'=>self::sourceSections(),'source-section'=>self::sourceSection(),'project-archive'=>self::archiveProject(),'project-restore'=>self::restoreProject(),'project-delete'=>self::deleteProject(),'voice-lab'=>self::voiceLab(),'voice-preview'=>self::voicePreview(),'pronunciation'=>self::pronunciation(),'rulesets'=>self::pronunciation(),'pronunciation-rule'=>self::pronunciationRule(),'pronunciation-example'=>self::pronunciationExample(),'rulesets-regex'=>self::regexPreview(),'textchecks'=>self::textChecks(),'chapters'=>self::chapters(),'chapter-review'=>self::chapterReview(),'chapter-audio'=>self::chapterAudio(),'chapter-text'=>self::chapterText(),'audio'=>self::audio(),'export'=>self::export(),default=>self::notFound()};}
         catch(Throwable $error){error_log($error->__toString());http_response_code(500);self::view('error',['message'=>config('app.debug',false)?$error->getMessage():'The request could not be completed. Check the application log for details.']);}
     }
     private static function voiceLab():void
@@ -173,6 +174,21 @@ final class App
             'label' => $h['chapter'] !== '' ? $h['chapter'] : 'the book',
         ], $hits);
         self::json(['ok' => true, 'sentences' => $sentences, 'where' => $where, 'sentence' => $sentences[0] ?? null]);
+    }
+
+    /** GET ?page=textchecks&id=PROJECT&kind=proper|number|... : things in the book a voice may read badly, to turn into rules. */
+    private static function textChecks():void
+    {
+        $id = (string) ($_GET['id'] ?? '');
+        $project = $id !== '' ? (new ProjectRepository())->find($id) : null;
+        if (!$project) { self::notFound(); return; }
+        $kind = (string) ($_GET['kind'] ?? 'proper');
+        if (!isset(TextCheckService::KINDS[$kind])) $kind = 'proper';
+        $voice = (string) ($project['active_voice_profile_id'] ?? '') ?: VoiceCatalog::DEFAULT_VOICE;
+        $svc = new PronunciationService();
+        $dictionary = TextCheckService::dictionary();
+        $rows = TextCheckService::scan((new NarrationService())->sourceTexts($id), $kind, $svc->effective($id, $voice), $dictionary, (int) ($project['normalize_caps'] ?? 1) === 1);
+        self::view('textchecks', ['project' => $project, 'kind' => $kind, 'rows' => $rows, 'hasDictionary' => $dictionary !== null, 'projectSets' => $svc->projectSets($id), 'voice' => $voice]);
     }
 
     /** GET ?page=rulesets-regex&pattern=...&case=0|1&project=ID -> {valid, error, count, capped, examples:[{before,match,after}]}: a live check of a regex against the book. */

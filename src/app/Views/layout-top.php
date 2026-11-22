@@ -11,6 +11,7 @@ $projectIdForBack = (string) ($_GET['id'] ?? $_GET['project'] ?? $_POST['id'] ??
 $tabByRoute = [
     'project' => 'overview', 'epub-upload' => 'source', 'source-sections' => 'source', 'source-section' => 'source',
     'chapters' => 'chapters', 'chapter-review' => 'chapters', 'pronunciation' => 'pronunciation', 'rulesets' => 'pronunciation',
+    'textchecks' => 'textchecks',
 ];
 $activeTab = $script === 'logical_sections.php' ? 'structure' : ($tabByRoute[$route] ?? null);
 $shellProject = $projectNav['project'] ?? (($activeTab !== null && isset($project) && is_array($project) && isset($project['id'], $project['title'])) ? $project : null);
@@ -84,6 +85,7 @@ $currentNav = match (true) {
             'source' => ['Source', base_url('source-sections', ['id' => $shellProject['id']])],
             'structure' => ['Structure', rtrim((string) config('app.base_path', ''), '/') . '/logical_sections.php?project=' . rawurlencode((string) $shellProject['id'])],
             'chapters' => ['Chapters and audio', base_url('chapters', ['id' => $shellProject['id']])],
+            'textchecks' => ['Text checks', base_url('textchecks', ['id' => $shellProject['id']])],
             'pronunciation' => ['Rulesets', base_url('rulesets', ['layer' => 'project', 'ref' => $shellProject['id']])],
         ] as $tab => [$label, $href]): ?>
           <a href="<?= e($href) ?>" <?= $activeTab === $tab ? 'class="active" aria-current="page"' : '' ?>><?= e($label) ?></a>
