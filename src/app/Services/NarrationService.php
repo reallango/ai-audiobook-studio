@@ -176,12 +176,19 @@ final class NarrationService
      * does not fire inside "most"), the possessive included, case as the rule says.
      * @return string[]
      */
-    public function exampleSentences(?string $projectId, string $word, bool $wholeWord = true, bool $caseSensitive = false, int $limit = 60): array
+    public function exampleSentences(?string $projectId, string $word, bool $wholeWord = true, bool $caseSensitive = false, int $limit = 60, ?string $matchType = null): array
     {
-        $word = trim(str_replace(["\u{2019}", "\u{2018}"], "'", $word));
-        if ($word === '' || mb_strlen($word) > 100) return [];
-        $body = preg_quote($word, '/');
-        $pattern = '/' . ($wholeWord ? '(?<![\p{L}\p{N}_\'])' . $body . '(?:\'[sS])?(?![\p{L}\p{N}_\'])' : $body) . '/u' . ($caseSensitive ? '' : 'i');
+        if ($matchType === 'regex') {
+            $word = trim($word);
+            if (PronunciationService::validateRegex($word, $caseSensitive) !== null) return [];
+            $pattern = PronunciationService::regexFull($word, $caseSensitive);
+        } else {
+            if ($matchType !== null) $wholeWord = $matchType === 'word';
+            $word = trim(str_replace(["\u{2019}", "\u{2018}"], "'", $word));
+            if ($word === '' || mb_strlen($word) > 100) return [];
+            $body = preg_quote($word, '/');
+            $pattern = '/' . ($wholeWord ? '(?<![\p{L}\p{N}_\'])' . $body . '(?:\'[sS])?(?![\p{L}\p{N}_\'])' : $body) . '/u' . ($caseSensitive ? '' : 'i');
+        }
         $ids = $projectId !== null && $projectId !== '' ? [$projectId] : array_slice(array_column((new ProjectRepository())->all(false), 'id'), 0, 5);
         $found = [];
         foreach ($ids as $id) {

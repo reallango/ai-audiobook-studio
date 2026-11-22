@@ -22,7 +22,7 @@ final class App
     public static function run(): void
     {
         $route=trim((string)($_GET['page']??'projects'),'/');
-        try{match($route){'api-health'=>self::json(self::health()),'diagnostics'=>self::view('diagnostics'),'projects','home',''=>self::projects(),'project-create'=>self::createProject(),'project'=>self::project(),'epub-upload'=>self::epubUpload(),'epub-analyze'=>self::epubAnalyze(),'source-sections'=>self::sourceSections(),'source-section'=>self::sourceSection(),'project-archive'=>self::archiveProject(),'project-restore'=>self::restoreProject(),'project-delete'=>self::deleteProject(),'voice-lab'=>self::voiceLab(),'voice-preview'=>self::voicePreview(),'pronunciation'=>self::pronunciation(),'rulesets'=>self::pronunciation(),'pronunciation-rule'=>self::pronunciationRule(),'pronunciation-example'=>self::pronunciationExample(),'chapters'=>self::chapters(),'chapter-review'=>self::chapterReview(),'chapter-audio'=>self::chapterAudio(),'chapter-text'=>self::chapterText(),'audio'=>self::audio(),'export'=>self::export(),default=>self::notFound()};}
+        try{match($route){'api-health'=>self::json(self::health()),'diagnostics'=>self::view('diagnostics'),'projects','home',''=>self::projects(),'project-create'=>self::createProject(),'project'=>self::project(),'epub-upload'=>self::epubUpload(),'epub-analyze'=>self::epubAnalyze(),'source-sections'=>self::sourceSections(),'source-section'=>self::sourceSection(),'project-archive'=>self::archiveProject(),'project-restore'=>self::restoreProject(),'project-delete'=>self::deleteProject(),'voice-lab'=>self::voiceLab(),'voice-preview'=>self::voicePreview(),'pronunciation'=>self::pronunciation(),'rulesets'=>self::pronunciation(),'pronunciation-rule'=>self::pronunciationRule(),'pronunciation-example'=>self::pronunciationExample(),'rulesets-regex'=>self::regexPreview(),'chapters'=>self::chapters(),'chapter-review'=>self::chapterReview(),'chapter-audio'=>self::chapterAudio(),'chapter-text'=>self::chapterText(),'audio'=>self::audio(),'export'=>self::export(),default=>self::notFound()};}
         catch(Throwable $error){error_log($error->__toString());http_response_code(500);self::view('error',['message'=>config('app.debug',false)?$error->getMessage():'The request could not be completed. Check the application log for details.']);}
     }
     private static function voiceLab():void
@@ -64,7 +64,7 @@ final class App
                 $action = (string) ($_POST['action'] ?? '');
                 switch ($action) {
                     case 'add_rule':
-                        $svc->save($layer, $ref, (string) ($_POST['pattern'] ?? ''), (string) ($_POST['replacement'] ?? ''), isset($_POST['case_sensitive']), isset($_POST['whole_word']), (string) ($_POST['note'] ?? ''));
+                        $svc->save($layer, $ref, (string) ($_POST['pattern'] ?? ''), (string) ($_POST['replacement'] ?? ''), isset($_POST['case_sensitive']), isset($_POST['whole_word']), (string) ($_POST['note'] ?? ''), in_array((string) ($_POST['match_type'] ?? ''), PronunciationService::MATCH_TYPES, true) ? (string) $_POST['match_type'] : null);
                         self::flash('success', 'Rule saved.');
                         break;
                     case 'toggle_rule':
@@ -158,8 +158,29 @@ final class App
     private static function pronunciationExample():void
     {
         $project = (string) ($_GET['project'] ?? '');
-        $sentences = (new NarrationService())->exampleSentences($project !== '' ? $project : null, (string) ($_GET['q'] ?? ''), ($_GET['whole'] ?? '1') !== '0', ($_GET['case'] ?? '0') === '1');
+        $match = (string) ($_GET['match'] ?? '');
+        $sentences = (new NarrationService())->exampleSentences($project !== '' ? $project : null, (string) ($_GET['q'] ?? ''), ($_GET['whole'] ?? '1') !== '0', ($_GET['case'] ?? '0') === '1', 60, in_array($match, PronunciationService::MATCH_TYPES, true) ? $match : null);
         self::json(['ok' => true, 'sentences' => $sentences, 'sentence' => $sentences[0] ?? null]);
+    }
+
+    /** GET ?page=rulesets-regex&pattern=...&case=0|1&project=ID -> {valid, error, count, capped, examples:[{before,match,after}]}: a live check of a regex against the book. */
+    private static function regexPreview():void
+    {
+        $pattern = trim((string) ($_GET['pattern'] ?? ''));
+        $case = ($_GET['case'] ?? '0') === '1';
+        $problem = PronunciationService::validateRegex($pattern, $case);
+        if ($problem !== null) { self::json(['ok' => true, 'valid' => false, 'error' => $problem, 'count' => 0, 'examples' => []]); return; }
+        $project = (string) ($_GET['project'] ?? '');
+        $cap = 200;
+        $sentences = (new NarrationService())->exampleSentences($project !== '' ? $project : null, $pattern, true, $case, $cap, 'regex');
+        $re = PronunciationService::regexFull($pattern, $case);
+        $examples = [];
+        foreach (array_slice($sentences, 0, 6) as $sentence) {
+            if (preg_match($re, $sentence, $m, PREG_OFFSET_CAPTURE) === 1) {
+                $examples[] = ['before' => substr($sentence, 0, $m[0][1]), 'match' => $m[0][0], 'after' => substr($sentence, $m[0][1] + strlen($m[0][0]))];
+            }
+        }
+        self::json(['ok' => true, 'valid' => true, 'error' => '', 'count' => count($sentences), 'capped' => count($sentences) >= $cap, 'examples' => $examples]);
     }
 
     /** POST JSON {_token, layer, ref, pattern, replacement, whole_word?, case_sensitive?, note?} -> saves one rule (used by the chapter workbench). */
@@ -173,7 +194,7 @@ final class App
         try {
             $layer = (string) ($p['layer'] ?? '');
             if (!isset(PronunciationService::LAYER_LABELS[$layer])) throw new \InvalidArgumentException('Choose where to save the rule.');
-            (new PronunciationService())->save($layer, $layer === 'default' ? '' : (string) ($p['ref'] ?? ''), (string) ($p['pattern'] ?? ''), (string) ($p['replacement'] ?? ''), !empty($p['case_sensitive']), !array_key_exists('whole_word', $p) || !empty($p['whole_word']), (string) ($p['note'] ?? ''));
+            (new PronunciationService())->save($layer, $layer === 'default' ? '' : (string) ($p['ref'] ?? ''), (string) ($p['pattern'] ?? ''), (string) ($p['replacement'] ?? ''), !empty($p['case_sensitive']), !array_key_exists('whole_word', $p) || !empty($p['whole_word']), (string) ($p['note'] ?? ''), in_array((string) ($p['match_type'] ?? ''), PronunciationService::MATCH_TYPES, true) ? (string) $p['match_type'] : null);
             self::json(['ok' => true, 'message' => 'Rule saved.']);
         } catch (\InvalidArgumentException $error) {
             $fail(422, $error->getMessage());

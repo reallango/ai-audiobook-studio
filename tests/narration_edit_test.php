@@ -109,6 +109,9 @@ check('matching inside words is available for rules that do that', count($narr->
 check('case-sensitive rules only find that case', [$narr->exampleSentences('p', 'OS', true, true), $narr->exampleSentences('p', 'os', true, true)], [['The OS was down.'], ["Sisko's os stayed on."]]);
 check('the possessive counts as the word', $narr->exampleSentences('p', 'Sisko'), ["Sisko's os stayed on."]);
 check('the limit is respected', count($narr->exampleSentences('p', 'os', true, false, 1)), 1);
+check('a regex finds sentences by pattern', $narr->exampleSentences('p', '\bSisko|OS\b', true, true, 60, 'regex'), ['The OS was down.', "Sisko's os stayed on."]);
+check('a broken or empty-matching regex finds nothing', [$narr->exampleSentences('p', '(oops', true, false, 60, 'regex'), $narr->exampleSentences('p', 'x*', true, false, 60, 'regex')], [[], []]);
+check('match type word overrides the whole flag', $narr->exampleSentences('p', 'os', false, false, 60, 'word'), ['The OS was down.', "Sisko's os stayed on."]);
 
 @unlink($db);
 echo $failures === 0 ? "\nall passed\n" : "\n$failures failed\n";

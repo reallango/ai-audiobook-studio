@@ -54,13 +54,16 @@
     if (nextButton) nextButton.disabled = n < 2;
   }
 
+  let matchMode = '';
+  const matchParam = () => (matchMode === 'regex' ? '&match=regex' : '');
+
   async function loadExamples(word) {
     if (!wb || !word) return [];
-    const key = `${word}|${whole && !whole.checked ? 0 : 1}|${caseFlag}`;
+    const key = `${word}|${whole && !whole.checked ? 0 : 1}|${caseFlag}|${matchMode}`;
     if (examples.key === key) return examples.list;
     try {
       const base = wb.dataset.example;
-      const url = `${base}${base.includes('?') ? '&' : '?'}project=${encodeURIComponent(wb.dataset.project || '')}&q=${encodeURIComponent(word)}&whole=${whole && !whole.checked ? 0 : 1}&case=${caseFlag}`;
+      const url = `${base}${base.includes('?') ? '&' : '?'}project=${encodeURIComponent(wb.dataset.project || '')}&q=${encodeURIComponent(word)}&whole=${whole && !whole.checked ? 0 : 1}&case=${caseFlag}${matchParam()}`;
       const reply = await (await fetch(url, {credentials: 'same-origin'})).json();
       examples = {key, list: Array.isArray(reply.sentences) ? reply.sentences : [], index: -1};
     } catch (error) {
@@ -92,8 +95,9 @@
   }
 
   /** Puts words into the panel; with no paragraph at hand it looks for a sentence in the book. */
-  async function load({source, para, shownSpoken, layerValue, label, autoHear, caseSensitive = false, wholeWord = true}) {
+  async function load({source, para, shownSpoken, layerValue, label, autoHear, caseSensitive = false, wholeWord = true, match = ''}) {
     if (!wb) return;
+    matchMode = match === 'regex' ? 'regex' : '';
     caseFlag = caseSensitive ? 1 : 0;
     if (whole) whole.checked = wholeWord;
     written.value = source;
@@ -123,7 +127,7 @@
     button.disabled = true;
     status.textContent = 'Generating…';
     try {
-      const temp = withChange && written.value.trim() ? [{pattern: written.value.trim(), replacement: spoken.value}] : [];
+      const temp = withChange && written.value.trim() ? [{pattern: written.value.trim(), replacement: spoken.value, case_sensitive: !!caseFlag, ...(matchMode === 'regex' ? {match_type: 'regex'} : {})}] : [];
       const result = await speak({text: text.value, voice: wb.dataset.voice, speed: Number(wb.dataset.speed), token: wb.dataset.token, url: wb.dataset.preview, rules: withChange, project: wb.dataset.project, setId: wb.dataset.set, temp});
       if (audio.dataset.url) URL.revokeObjectURL(audio.dataset.url);
       audio.dataset.url = URL.createObjectURL(result.blob);
@@ -160,7 +164,7 @@
       const [scope, ref] = layer.value.split('|');
       save.disabled = true;
       try {
-        await post(wb.dataset.rule, wb.dataset.token, {layer: scope, ref, pattern: written.value.trim(), replacement: spoken.value, whole_word: whole.checked});
+        await post(wb.dataset.rule, wb.dataset.token, {layer: scope, ref, pattern: written.value.trim(), replacement: spoken.value, whole_word: whole.checked, case_sensitive: !!caseFlag, ...(matchMode === 'regex' ? {match_type: 'regex'} : {})});
         status.textContent = 'Saved. Reloading to show the new text.';
         setTimeout(() => location.reload(), 900);
       } catch (error) {
@@ -175,7 +179,7 @@
       if (!button) return;
       event.preventDefault();
       load({source: button.dataset.written, shownSpoken: button.dataset.spoken, layerValue: button.dataset.layer, label: button.dataset.label, autoHear: true,
-        caseSensitive: button.dataset.case === '1', wholeWord: button.dataset.whole !== '0'});
+        caseSensitive: button.dataset.case === '1', wholeWord: button.dataset.whole !== '0', match: button.dataset.match || ''});
     });
   }
 

@@ -88,7 +88,14 @@ final class ProjectWorkflow
             ['key' => 'export', 'title' => 'Export', 'summary' => $export === null ? 'No audiobook file built yet.'
                 : ($exportCurrent ? 'Audiobook file is up to date.' : 'Audiobook file is out of date; chapters changed since.')],
         ];
-        foreach ($steps as &$step) $step['state'] = $done[$step['key']] ? 'done' : ($step['key'] === $current ? 'current' : 'todo');
+        // a step is done only when everything before it is; the first unfinished one is current, the rest wait
+        $reached = false;
+        foreach ($steps as &$step) {
+            if ($reached) { $step['state'] = 'todo'; continue; }
+            if ($done[$step['key']]) { $step['state'] = 'done'; continue; }
+            $step['state'] = 'current';
+            $reached = true;
+        }
         unset($step);
 
         $next = match ($current) {

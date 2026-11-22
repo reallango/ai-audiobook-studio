@@ -33,7 +33,7 @@ $states = fn (array $f): string => implode(',', array_column($f['steps'], 'state
 
 $f = $flow(false, false);
 check('a new project starts at the source step', [$f['next']['label'], $f['next']['href'] !== '' , substr($states($f), 0, 7)], ['Import the EPUB', true, 'current']);
-check('later steps wait, the voice step is already fine', $states($f), 'current,todo,done,todo,todo,todo');
+check('later steps wait, even ones that would be fine', $states($f), 'current,todo,todo,todo,todo,todo');
 
 $f = $flow(true, false);
 check('an imported EPUB asks to be analyzed', [$f['next']['type'], $f['next']['label']], ['post', 'Analyze the EPUB']);

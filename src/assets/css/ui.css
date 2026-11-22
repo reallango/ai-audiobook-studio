@@ -261,3 +261,14 @@ mark.chg:hover, mark.chg:focus-visible { filter: brightness(1.25); outline: none
   .page-head { flex-direction: column; align-items: flex-start; }
   .review-item, .review-cols { grid-template-columns: 1fr; }
 }
+
+/* Regex helper */
+.regex-helper { margin: .6rem 0 1rem; border: 1px solid var(--line, #d8d8d8); border-radius: 8px; padding: .5rem .8rem; background: var(--panel, #fafafa); }
+.regex-helper summary { cursor: pointer; font-weight: 600; }
+.rh-body { display: grid; gap: .5rem; margin-top: .6rem; max-width: 46rem; }
+.rh-body label { display: grid; gap: .2rem; }
+.rh-body .check { display: flex; gap: .4rem; align-items: center; }
+.rh-explain { margin: 0; }
+.rh-body code { word-break: break-all; }
+.rh-examples { margin: 0; padding-left: 1.1rem; }
+.rh-examples mark { background: #ffe58a; padding: 0 2px; }

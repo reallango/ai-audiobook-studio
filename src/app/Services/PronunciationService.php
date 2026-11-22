@@ -29,22 +29,79 @@ final class PronunciationService
     }
 
     /** Adds a rule, or replaces the spoken form of an existing rule with the same pattern in that layer. */
-    public function save(string $scope, string $ref, string $pattern, string $replacement, bool $caseSensitive = false, bool $wholeWord = true, string $note = ''): void
+    public function save(string $scope, string $ref, string $pattern, string $replacement, bool $caseSensitive = false, bool $wholeWord = true, string $note = '', ?string $matchType = null): void
     {
         $this->assertLayer($scope, $ref);
-        $pattern = trim($pattern);
+        $matchType ??= $wholeWord ? 'word' : 'anywhere';
+        if (!in_array($matchType, self::MATCH_TYPES, true)) throw new InvalidArgumentException('Unknown match type.');
+        $isRegex = $matchType === 'regex';
+        $pattern = $isRegex ? trim($pattern) : trim($pattern);
         $replacement = trim($replacement);
-        if ($pattern === '' || mb_strlen($pattern) > 100) throw new InvalidArgumentException('The written form must be 1 to 100 characters.');
+        if ($pattern === '' || mb_strlen($pattern) > ($isRegex ? 200 : 100)) throw new InvalidArgumentException($isRegex ? 'A pattern must be 1 to 200 characters.' : 'The written form must be 1 to 100 characters.');
+        if ($isRegex && ($problem = self::validateRegex($pattern, $caseSensitive)) !== null) throw new InvalidArgumentException($problem);
         // An empty spoken form is allowed: it removes the text from the narration (watermarks, page markers).
         if (mb_strlen($replacement) > 200) throw new InvalidArgumentException('The spoken form is limited to 200 characters.');
         if (mb_strlen($note) > 300) throw new InvalidArgumentException('The note is limited to 300 characters.');
         $s = $this->db()->prepare(
-            'INSERT INTO pronunciation_rules(scope,scope_ref,pattern,replacement,case_sensitive,whole_word,note)
-             VALUES(:s,:r,:p,:rep,:cs,:ww,:n)
+            'INSERT INTO pronunciation_rules(scope,scope_ref,pattern,replacement,case_sensitive,whole_word,match_type,note)
+             VALUES(:s,:r,:p,:rep,:cs,:ww,:mt,:n)
              ON CONFLICT(scope,scope_ref,pattern) DO UPDATE SET replacement=excluded.replacement, case_sensitive=excluded.case_sensitive,
-               whole_word=excluded.whole_word, note=excluded.note, updated_at=CURRENT_TIMESTAMP'
+               whole_word=excluded.whole_word, match_type=excluded.match_type, note=excluded.note, updated_at=CURRENT_TIMESTAMP'
         );
-        $s->execute(['s' => $scope, 'r' => $ref, 'p' => $this->normalize($pattern), 'rep' => $replacement, 'cs' => (int) $caseSensitive, 'ww' => (int) $wholeWord, 'n' => $note]);
+        $s->execute(['s' => $scope, 'r' => $ref, 'p' => $isRegex ? $pattern : $this->normalize($pattern), 'rep' => $replacement, 'cs' => (int) $caseSensitive,
+            'ww' => (int) ($matchType === 'word'), 'mt' => $matchType, 'n' => $note]);
+    }
+
+    public const MATCH_TYPES = ['word', 'anywhere', 'regex'];
+
+    /** How a rule row matches, also for rows from before the match type existed. */
+    public static function typeOf(array $rule): string
+    {
+        $type = (string) ($rule['match_type'] ?? '');
+        return in_array($type, self::MATCH_TYPES, true) ? $type : (((int) ($rule['whole_word'] ?? 1)) === 1 ? 'word' : 'anywhere');
+    }
+
+    /** The user's pattern as the inside of a ~ delimited PCRE: ~ and / are escaped, nothing else is changed. */
+    public static function regexBody(string $pattern): string
+    {
+        return (string) preg_replace('#(?<!\\\\)[~/]#', '\\\\$0', $pattern);
+    }
+
+    /** A complete, ready-to-run pattern for a user regex. */
+    public static function regexFull(string $pattern, bool $caseSensitive): string
+    {
+        return '~(?:' . self::regexBody($pattern) . ')~u' . ($caseSensitive ? '' : 'i');
+    }
+
+    /**
+     * Null when the pattern is usable, otherwise a plain message. A pattern must compile, must not match an empty
+     * string (it would match everywhere), and must not blow up the backtracking limit on awkward text.
+     */
+    public static function validateRegex(string $pattern, bool $caseSensitive = false): ?string
+    {
+        if (trim($pattern) === '') return 'Enter a pattern.';
+        if (mb_strlen($pattern) > 200) return 'A pattern is limited to 200 characters.';
+        $full = self::regexFull($pattern, $caseSensitive);
+        $message = '';
+        set_error_handler(static function (int $no, string $text) use (&$message): bool { $message = $text; return true; });
+        $empty = preg_match($full, '');
+        restore_error_handler();
+        if ($empty === false) return 'This is not a valid pattern' . ($message !== '' ? ': ' . trim((string) preg_replace('/^preg_match\(\): (Compilation failed: )?/', '', $message)) : '.');
+        if ($empty === 1) return 'This pattern can match nothing at all, so it would match everywhere. Make it require some text.';
+        // The JIT ignores the backtracking limit, so it is switched off while the pattern is stress-tested.
+        $oldLimit = (string) ini_get('pcre.backtrack_limit');
+        $oldJit = (string) ini_get('pcre.jit');
+        ini_set('pcre.backtrack_limit', '50000');
+        ini_set('pcre.jit', '0');
+        try {
+            foreach ([str_repeat('a', 3000), str_repeat('ab ', 1000), str_repeat('1', 3000), str_repeat('The word, "x" ', 200), str_repeat('a', 40) . '!', str_repeat('x ', 40) . '!', str_repeat('ab', 30) . '!'] as $sample) {
+                if (@preg_match($full, $sample) === false && preg_last_error() === PREG_BACKTRACK_LIMIT_ERROR) return 'This pattern is too complex and could make the page hang. Try something simpler.';
+            }
+        } finally {
+            ini_set('pcre.backtrack_limit', $oldLimit);
+            ini_set('pcre.jit', $oldJit);
+        }
+        return null;
     }
 
     public function setEnabled(int $ruleId, bool $enabled): void
@@ -73,11 +130,11 @@ final class PronunciationService
         $db->beginTransaction();
         try {
             $db->prepare(
-                'INSERT INTO pronunciation_rules(scope,scope_ref,pattern,replacement,case_sensitive,whole_word,enabled,note)
-                 VALUES(:s,:r,:p,:rep,:cs,:ww,:en,:n)
+                'INSERT INTO pronunciation_rules(scope,scope_ref,pattern,replacement,case_sensitive,whole_word,match_type,enabled,note)
+                 VALUES(:s,:r,:p,:rep,:cs,:ww,:mt,:en,:n)
                  ON CONFLICT(scope,scope_ref,pattern) DO UPDATE SET replacement=excluded.replacement, case_sensitive=excluded.case_sensitive,
-                   whole_word=excluded.whole_word, enabled=excluded.enabled, note=excluded.note, updated_at=CURRENT_TIMESTAMP'
-            )->execute(['s' => $toScope, 'r' => $toRef, 'p' => $rule['pattern'], 'rep' => $rule['replacement'], 'cs' => $rule['case_sensitive'], 'ww' => $rule['whole_word'], 'en' => $rule['enabled'], 'n' => $rule['note']]);
+                   whole_word=excluded.whole_word, match_type=excluded.match_type, enabled=excluded.enabled, note=excluded.note, updated_at=CURRENT_TIMESTAMP'
+            )->execute(['s' => $toScope, 'r' => $toRef, 'p' => $rule['pattern'], 'rep' => $rule['replacement'], 'cs' => $rule['case_sensitive'], 'ww' => $rule['whole_word'], 'mt' => self::typeOf($rule), 'en' => $rule['enabled'], 'n' => $rule['note']]);
             if ($move) $db->prepare('DELETE FROM pronunciation_rules WHERE id=:id')->execute(['id' => $ruleId]);
             $db->commit();
         } catch (\Throwable $e) {
@@ -254,17 +311,28 @@ final class PronunciationService
         $text = str_replace(["\u{2019}", "\u{2018}"], "'", $text);
         if ($effective === [] && !$normalizeCaps) return ['text' => $text, 'hits' => [], 'pieces' => $text === '' ? [] : [self::plainPiece($text, 0)]];
         $rules = array_values($effective);
-        usort($rules, static fn (array $a, array $b): int => mb_strlen((string) $b['pattern']) <=> mb_strlen((string) $a['pattern']));
+        $literal = array_values(array_filter($rules, static fn (array $r): bool => self::typeOf($r) !== 'regex'));
+        $regexRules = array_values(array_filter($rules, static fn (array $r): bool => self::typeOf($r) === 'regex'));
+        usort($literal, static fn (array $a, array $b): int => mb_strlen((string) $b['pattern']) <=> mb_strlen((string) $a['pattern']));
+        // Literal rules are tried first (longest first), then regex rules, a higher layer's before a lower one's.
+        usort($regexRules, static fn (array $a, array $b): int => [(int) ($b['rank'] ?? 0), (int) ($b['id'] ?? 0)] <=> [(int) ($a['rank'] ?? 0), (int) ($a['id'] ?? 0)]);
 
         $parts = [];
         $byKey = [];
-        foreach ($rules as $rule) {
+        foreach ($literal as $rule) {
             $body = preg_quote((string) $rule['pattern'], '/');
             if ((int) $rule['case_sensitive'] !== 1) $body = '(?i:' . $body . ')';
             // A whole-word rule also covers the possessive: a rule for Bajor handles Bajor's and BAJOR'S too.
-            if ((int) $rule['whole_word'] === 1) $body = '(?<![\p{L}\p{N}_\'])' . $body . '(?:\'[sS])?(?![\p{L}\p{N}_\'])';
+            if (self::typeOf($rule) === 'word') $body = '(?<![\p{L}\p{N}_\'])' . $body . '(?:\'[sS])?(?![\p{L}\p{N}_\'])';
             $parts[] = $body;
             $byKey[mb_strtolower((string) $rule['pattern'])] = $rule;
+        }
+        $regexByGroup = [];
+        foreach ($regexRules as $i => $rule) {
+            $name = '_rx' . $i;
+            $inner = self::regexBody((string) $rule['pattern']);
+            $parts[] = '(?<' . $name . '>' . ((int) $rule['case_sensitive'] === 1 ? '(?:' . $inner . ')' : '(?i:' . $inner . ')') . ')';
+            $regexByGroup[$name] = $rule;
         }
         // Last alternative, so any rule wins over it: an ALL-CAPS word that no rule covers (Kokoro would spell it out).
         if ($normalizeCaps) {
@@ -275,11 +343,25 @@ final class PronunciationService
         $hits = [];
         $pieces = [];
         $pos = 0;
-        if (preg_match_all('/' . implode('|', $parts) . '/u', $text, $all, PREG_SET_ORDER | PREG_OFFSET_CAPTURE)) {
+        $found = @preg_match_all('/' . implode('|', $parts) . '/u', $text, $all, PREG_SET_ORDER | PREG_OFFSET_CAPTURE);
+        if ($found === false && $regexByGroup !== []) {
+            // a regex rule broke the match (backtracking limit): carry on without the regex rules rather than lose the text
+            return $this->apply($text, array_filter($effective, static fn (array $r): bool => self::typeOf($r) !== 'regex'), $normalizeCaps);
+        }
+        if ($found) {
             foreach ($all as $m) {
                 [$matched, $offset] = $m[0];
                 if ($offset > $pos) $pieces[] = self::plainPiece(substr($text, $pos, $offset - $pos), $pos);
                 $pos = $offset + strlen($matched);
+                foreach ($regexByGroup as $name => $rule) {
+                    if (!isset($m[$name]) || $m[$name][1] < 0) continue;
+                    $out = self::expand((string) $rule['replacement'], $text, $offset, $matched, $rule);
+                    if ($out === $matched) { $pieces[] = self::plainPiece($matched, $offset); continue 2; }
+                    $hits[$rule['pattern']] = ($hits[$rule['pattern']] ?? 0) + 1;
+                    $pieces[] = ['src' => $matched, 'src_start' => $offset, 'out' => $out, 'kind' => 'rule', 'rule' => (string) $rule['pattern'],
+                        'scope' => (string) ($rule['scope'] ?? ($rule['layer'] ?? '')), 'scope_ref' => (string) ($rule['scope_ref'] ?? ''), 'label' => (string) ($rule['layer_label'] ?? ''), 'match' => 'regex'];
+                    continue 2;
+                }
                 if (isset($m['caps']) && $m['caps'][0] !== '') {
                     $normal = self::normalCase($matched);
                     if ($normal === null || $normal === $matched) { $pieces[] = self::plainPiece($matched, $offset); continue; }
@@ -295,7 +377,7 @@ final class PronunciationService
                 $suffix = '';
                 if ($rule === null && preg_match('/^(.+)\'[sS]$/u', $matched, $sm)) {      // the possessive of a word that has a rule
                     $base = $byKey[mb_strtolower($sm[1])] ?? null;
-                    if ($base !== null && (int) $base['whole_word'] === 1) { $rule = $base; $suffix = "'s"; }
+                    if ($base !== null && self::typeOf($base) === 'word') { $rule = $base; $suffix = "'s"; }
                 }
                 $replacement = $rule === null ? '' : (string) $rule['replacement'] . $suffix;
                 if ($rule === null || $replacement === $matched) { $pieces[] = self::plainPiece($matched, $offset); continue; }
@@ -306,6 +388,22 @@ final class PronunciationService
         }
         if ($pos < strlen($text)) $pieces[] = self::plainPiece(substr($text, $pos), $pos);
         return ['text' => implode('', array_column($pieces, 'out')), 'hits' => $hits, 'pieces' => $pieces];
+    }
+
+    /**
+     * The spoken form of a regex rule: $1 or \1 stand for what the pattern's groups matched, $0 for the whole match.
+     * The pattern is run again from the match position so look-behind and look-ahead see the real surrounding text.
+     * @param array<string,mixed> $rule
+     */
+    private static function expand(string $template, string $text, int $offset, string $matched, array $rule): string
+    {
+        $groups = [0 => $matched];
+        $again = '~\G(?:' . self::regexBody((string) $rule['pattern']) . ')~u' . ((int) $rule['case_sensitive'] === 1 ? '' : 'i');
+        if (@preg_match($again, $text, $found, 0, $offset) === 1) $groups = $found;
+        return (string) preg_replace_callback('~\$\{(\d+)\}|\$(\d+)|\\\\(\d+)~', static function (array $x) use ($groups): string {
+            $n = (int) (($x[1] ?? '') !== '' ? $x[1] : (($x[2] ?? '') !== '' ? $x[2] : ($x[3] ?? '0')));
+            return (string) ($groups[$n] ?? '');
+        }, $template);
     }
 
     /** @return array<string,mixed> */
@@ -339,11 +437,15 @@ final class PronunciationService
     public function withTemporary(array $effective, array $temporary): array
     {
         foreach (array_slice($temporary, 0, 20) as $t) {
-            $pattern = trim(str_replace(["\u{2019}", "\u{2018}"], "'", (string) ($t['pattern'] ?? '')));
-            if ($pattern === '' || mb_strlen($pattern) > 100 || mb_strlen((string) ($t['replacement'] ?? '')) > 200) continue;
+            $type = in_array((string) ($t['match_type'] ?? 'word'), self::MATCH_TYPES, true) ? (string) ($t['match_type'] ?? 'word') : 'word';
+            $case = !empty($t['case_sensitive']) ? 1 : 0;
+            $pattern = trim((string) ($t['pattern'] ?? ''));
+            if ($type !== 'regex') $pattern = str_replace(["\u{2019}", "\u{2018}"], "'", $pattern);
+            if ($pattern === '' || mb_strlen($pattern) > ($type === 'regex' ? 200 : 100) || mb_strlen((string) ($t['replacement'] ?? '')) > 200) continue;
+            if ($type === 'regex' && self::validateRegex($pattern, (bool) $case) !== null) continue;      // an unusable trial pattern is ignored
             $effective[mb_strtolower($pattern)] = [
-                'pattern' => $pattern, 'replacement' => (string) ($t['replacement'] ?? ''), 'case_sensitive' => 0, 'whole_word' => 1,
-                'enabled' => 1, 'layer' => 'temp', 'layer_label' => 'Trying it now',
+                'pattern' => $pattern, 'replacement' => (string) ($t['replacement'] ?? ''), 'case_sensitive' => $case, 'whole_word' => (int) ($type === 'word'),
+                'match_type' => $type, 'enabled' => 1, 'layer' => 'temp', 'layer_label' => 'Trying it now', 'rank' => 99,
             ];
         }
         return $effective;
