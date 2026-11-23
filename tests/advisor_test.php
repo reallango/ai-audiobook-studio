@@ -33,6 +33,7 @@ check('a short title line after a chapter number is joined', SectionAdvisor::nam
 check('a watermark line first is skipped', SectionAdvisor::name(['OceanofPDF.com', 'Prologue', 'It began long ago.']), 'Prologue');
 check('a story opening is not mistaken for a heading', SectionAdvisor::name(['The lieutenant looked around at the people in the room.', 'Another line.']), null);
 check('an ALL-CAPS heading becomes Title Case', SectionAdvisor::name(['THE BEGINNING'], ['h1']), 'The Beginning');
+check('a bare chapter number is a chapter, with a place heading as its subtitle', [SectionAdvisor::name(['1', 'NEW ENGLAND', 'HAMDEN, CONNECTICUT. 1805. Jack walked a step behind his father.'], ['p', 'p', 'p']), SectionAdvisor::name(['12', 'He walked on.'])], ['Chapter 1: New England', 'Chapter 12']);
 check('nothing to name', SectionAdvisor::name([]), null);
 
 @unlink($db);

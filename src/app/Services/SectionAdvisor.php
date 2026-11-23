@@ -50,10 +50,11 @@ final class SectionAdvisor
         [$first, $firstType] = $lines[0];
         $isHeading = static fn (string $t, string $type): bool => mb_strlen($t) <= 70 && str_word_count($t) <= 9 && preg_match('/[.!?,;]$/u', $t) !== 1
             && (preg_match('/^h[1-6]$/', $type) === 1 || preg_match('/^' . self::HEADING_WORDS . '\b/iu', $t) === 1 || preg_match('/^\p{Lu}[^.]*$/u', $t) === 1);
-        if (!$isHeading($first, $firstType)) return null;
-        $name = self::tidy($first);
+        $bare = preg_match('/^(\d{1,3}|[IVXLC]{1,6})\.?$/u', $first) === 1;      // a chapter that is only numbered: 7, VII
+        if (!$bare && !$isHeading($first, $firstType)) return null;
+        $name = $bare ? 'Chapter ' . rtrim($first, '.') : self::tidy($first);
         // "Chapter 12" followed by a short title line becomes "Chapter 12: Title".
-        if (preg_match('/^' . self::HEADING_WORDS . '\s+[\p{L}\p{N}-]+$/iu', $first) === 1 && isset($lines[1])) {
+        if (($bare || preg_match('/^' . self::HEADING_WORDS . '\s+[\p{L}\p{N}-]+$/iu', $first) === 1) && isset($lines[1])) {
             [$second, $secondType] = $lines[1];
             if ($isHeading($second, $secondType) && preg_match('/^' . self::HEADING_WORDS . '\b/iu', $second) !== 1) $name .= ': ' . self::tidy($second);
         }
