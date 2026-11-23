@@ -8,7 +8,55 @@ final class LogicalSectionService
  public function combine(string$p,array$ids):void{if(count($ids)<2)throw new InvalidArgumentException('Select at least two adjacent logical sections.');$repo=new LogicalSectionRepository();$rows=[];foreach($ids as$id){$r=$repo->find($p,$id);if(!$r)throw new InvalidArgumentException('Section not found.');$rows[]=$r;}usort($rows,fn($a,$b)=>(int)$a['position']<=>(int)$b['position']);for($i=1;$i<count($rows);$i++)if((int)$rows[$i]['position']!==(int)$rows[$i-1]['position']+1)throw new InvalidArgumentException('Only adjacent sections can be combined.');$this->revision($p,'combine','Combined '.count($rows).' adjacent logical sections.');$db=Database::connection();$db->beginTransaction();try{$target=$rows[0]['id'];$order=(int)$db->query("SELECT COALESCE(MAX(source_order),-1)+1 FROM logical_section_sources WHERE logical_section_id=".$db->quote($target))->fetchColumn();$move=$db->prepare('UPDATE logical_section_sources SET logical_section_id=:target,source_order=:n WHERE logical_section_id=:source AND source_section_id=:sid');foreach(array_slice($rows,1)as$row){foreach($repo->sources($row['id'])as$source)$move->execute(['target'=>$target,'n'=>$order++,'source'=>$row['id'],'sid'=>$source['id']]);$db->prepare('DELETE FROM logical_sections WHERE id=:id')->execute(['id'=>$row['id']]);}$this->renumber($db,$p);$db->commit();}catch(Throwable$e){if($db->inTransaction())$db->rollBack();throw$e;}}
  public function split(string$p,string$id,string$blockId,string$title):void{$repo=new LogicalSectionRepository();$section=$repo->find($p,$id);if(!$section)throw new InvalidArgumentException('Logical section not found.');$blocks=$repo->blocks($id);$at=null;foreach($blocks as$i=>$b)if($b['id']===$blockId)$at=$i;if($at===null||$at<1||$at>=count($blocks))throw new InvalidArgumentException('Choose a block after the first block.');$this->revision($p,'split','Split '.$section['title'].' at a source block boundary.');$before=array_slice($blocks,0,$at);$after=array_slice($blocks,$at);$newId=$this->uuid();$db=Database::connection();$db->beginTransaction();try{$db->prepare('UPDATE logical_sections SET position=position+100000 WHERE project_id=:p AND position>:n')->execute(['p'=>$p,'n'=>$section['position']]);$db->prepare('INSERT INTO logical_sections(id,project_id,position,title,included)VALUES(:id,:p,:n,:t,:i)')->execute(['id'=>$newId,'p'=>$p,'n'=>$section['position']+1,'t'=>$title,'i'=>$section['included']]);$db->prepare('DELETE FROM logical_section_sources WHERE logical_section_id=:id')->execute(['id'=>$id]);$insert=$db->prepare('INSERT INTO logical_section_sources(logical_section_id,source_section_id,source_order,start_block_index,end_block_index)VALUES(:l,:s,:o,:start,:end)');$this->linksFromBlocks($insert,$id,$before);$this->linksFromBlocks($insert,$newId,$after);$db->commit();}catch(Throwable$e){if($db->inTransaction())$db->rollBack();throw$e;}}
  public function formatting(string$p,string$number,string$caps):void{if(!in_array($number,['preserve','digits','words'],true)||!in_array($caps,['preserve','title','upper'],true))throw new InvalidArgumentException('Invalid chapter formatting choice.');$this->revision($p,'title_format','Applied chapter title formatting.');$db=Database::connection();$db->beginTransaction();try{$db->prepare('INSERT INTO project_section_settings(project_id,number_style,capitalization,updated_at)VALUES(:p,:n,:c,CURRENT_TIMESTAMP) ON CONFLICT(project_id) DO UPDATE SET number_style=excluded.number_style,capitalization=excluded.capitalization,updated_at=CURRENT_TIMESTAMP')->execute(['p'=>$p,'n'=>$number,'c'=>$caps]);$q=$db->prepare('SELECT id,title FROM logical_sections WHERE project_id=:p');$q->execute(['p'=>$p]);$u=$db->prepare('UPDATE logical_sections SET title=:t,updated_at=CURRENT_TIMESTAMP WHERE id=:id');foreach($q->fetchAll()as$r){$title=$this->formatTitle($r['title'],$number,$caps);$u->execute(['t'=>$title,'id'=>$r['id']]);}$db->commit();}catch(Throwable$e){if($db->inTransaction())$db->rollBack();throw$e;}}
- public function undo(string$p):void{$repo=new LogicalSectionRepository();$rev=$repo->lastRevision($p);if(!$rev)throw new InvalidArgumentException('There is no structure operation to undo.');$snapshot=json_decode($rev['snapshot_json'],true,512,JSON_THROW_ON_ERROR);$db=Database::connection();$db->beginTransaction();try{$ids=$db->prepare('SELECT id FROM logical_sections WHERE project_id=:p');$ids->execute(['p'=>$p]);$del=$db->prepare('DELETE FROM logical_section_sources WHERE logical_section_id=:id');foreach($ids->fetchAll(\PDO::FETCH_COLUMN)as$id)$del->execute(['id'=>$id]);$db->prepare('DELETE FROM logical_sections WHERE project_id=:p')->execute(['p'=>$p]);$ls=$db->prepare('INSERT INTO logical_sections(id,project_id,position,title,included,created_at,updated_at)VALUES(:id,:project_id,:position,:title,:included,:created_at,:updated_at)');foreach($snapshot['sections']as$r)$ls->execute($r);$ln=$db->prepare('INSERT INTO logical_section_sources(logical_section_id,source_section_id,source_order,start_block_index,end_block_index)VALUES(:logical_section_id,:source_section_id,:source_order,:start_block_index,:end_block_index)');foreach($snapshot['links']as$r)$ln->execute($r);$db->prepare('UPDATE logical_structure_revisions SET undone_at=CURRENT_TIMESTAMP WHERE id=:id')->execute(['id'=>$rev['id']]);$db->commit();}catch(Throwable$e){if($db->inTransaction())$db->rollBack();throw$e;}}
+    /**
+     * Puts the structure back as it was before the last operation. Sections that existed then are updated in place, never
+     * deleted and recreated, so the work on a chapter (edits, voice and speed, approval, audio) survives. Only sections
+     * created since (by a split) are removed.
+     */
+    public function undo(string $p): void
+    {
+        $repo = new LogicalSectionRepository();
+        $rev = $repo->lastRevision($p);
+        if (!$rev) throw new InvalidArgumentException('There is no structure operation to undo.');
+        $snapshot = json_decode((string) $rev['snapshot_json'], true, 512, JSON_THROW_ON_ERROR);
+        $db = Database::connection();
+        $db->beginTransaction();
+        try {
+            $now = $db->prepare('SELECT id FROM logical_sections WHERE project_id=:p');
+            $now->execute(['p' => $p]);
+            $current = array_map('strval', $now->fetchAll(\PDO::FETCH_COLUMN));
+            $before = array_map(static fn (array $r): string => (string) $r['id'], $snapshot['sections']);
+
+            $dropLinks = $db->prepare('DELETE FROM logical_section_sources WHERE logical_section_id=:id');
+            $dropSection = $db->prepare('DELETE FROM logical_sections WHERE project_id=:p AND id=:id');
+            foreach (array_diff($current, $before) as $id) {
+                $dropLinks->execute(['id' => $id]);
+                $dropSection->execute(['p' => $p, 'id' => $id]);
+            }
+
+            // park every position out of the way (they are unique per project), then set each section as it was
+            $db->prepare('UPDATE logical_sections SET position = -position - 1000000 WHERE project_id=:p')->execute(['p' => $p]);
+            $update = $db->prepare('UPDATE logical_sections SET position=:position, title=:title, included=:included, updated_at=CURRENT_TIMESTAMP WHERE project_id=:project_id AND id=:id');
+            $insert = $db->prepare('INSERT INTO logical_sections(id,project_id,position,title,included,created_at,updated_at) VALUES(:id,:project_id,:position,:title,:included,:created_at,:updated_at)');
+            foreach ($snapshot['sections'] as $r) {
+                if (in_array((string) $r['id'], $current, true)) {
+                    $update->execute(['position' => $r['position'], 'title' => $r['title'], 'included' => $r['included'], 'project_id' => $p, 'id' => $r['id']]);
+                } else {
+                    $insert->execute($r);
+                }
+            }
+
+            $link = $db->prepare('INSERT INTO logical_section_sources(logical_section_id,source_section_id,source_order,start_block_index,end_block_index) VALUES(:logical_section_id,:source_section_id,:source_order,:start_block_index,:end_block_index)');
+            foreach ($before as $id) $dropLinks->execute(['id' => $id]);
+            foreach ($snapshot['links'] as $r) $link->execute($r);
+
+            $db->prepare('UPDATE logical_structure_revisions SET undone_at=CURRENT_TIMESTAMP WHERE id=:id')->execute(['id' => $rev['id']]);
+            $db->commit();
+        } catch (Throwable $e) {
+            if ($db->inTransaction()) $db->rollBack();
+            throw $e;
+        }
+    }
  private function revision(string$p,string$op,string$desc):void{$db=Database::connection();$s=$db->prepare('SELECT id,project_id,position,title,included,created_at,updated_at FROM logical_sections WHERE project_id=:p ORDER BY position');$s->execute(['p'=>$p]);$sections=$s->fetchAll();$l=$db->prepare('SELECT x.logical_section_id,x.source_section_id,x.source_order,x.start_block_index,x.end_block_index FROM logical_section_sources x JOIN logical_sections s ON s.id=x.logical_section_id WHERE s.project_id=:p ORDER BY s.position,x.source_order');$l->execute(['p'=>$p]);$db->prepare('INSERT INTO logical_structure_revisions(project_id,operation,description,snapshot_json)VALUES(:p,:o,:d,:j)')->execute(['p'=>$p,'o'=>$op,'d'=>$desc,'j'=>json_encode(['sections'=>$sections,'links'=>$l->fetchAll()],JSON_THROW_ON_ERROR)]);}
  private function linksFromBlocks(\PDOStatement$q,string$id,array$blocks):void{$groups=[];foreach($blocks as$b){$sid=$b['source_section_id'];$groups[$sid]??=['start'=>$b['block_index'],'end'=>$b['block_index'],'order'=>$b['source_order']];$groups[$sid]['end']=$b['block_index'];}uasort($groups,fn($a,$b)=>$a['order']<=>$b['order']);$o=0;foreach($groups as$sid=>$g)$q->execute(['l'=>$id,'s'=>$sid,'o'=>$o++,'start'=>$g['start'],'end'=>$g['end']]);}
  private function renumber(\PDO$db,string$p):void{$s=$db->prepare('SELECT id FROM logical_sections WHERE project_id=:p ORDER BY position');$s->execute(['p'=>$p]);$ids=$s->fetchAll(\PDO::FETCH_COLUMN);$q=$db->prepare('UPDATE logical_sections SET position=:n WHERE id=:id');foreach($ids as$i=>$id)$q->execute(['n'=>$i+1,'id'=>$id]);}
