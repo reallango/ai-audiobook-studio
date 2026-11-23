@@ -118,13 +118,14 @@ $explain = [
   <?php if ($ready && ($layer !== 'set' || $currentSet)): ?>
     <h2 class="pron-h2"><?= e($layers[$layer]) ?> rules<?= $layer === 'voice' ? ' for ' . e($ref) : '' ?><?= $currentSet ? ': ' . e($currentSet['name']) : '' ?> <small>(<?= count($rules) ?>)</small></h2>
 
-    <form method="post" class="pron-add" id="add"><?= $hidden() ?><input type="hidden" name="action" value="add_rule">
+    <form method="post" class="pron-add" id="add"><?= $hidden() ?><input type="hidden" name="action" value="add_rule"><input type="hidden" name="edit_id" value="">
+      <p class="pron-editing" id="pron-editing" hidden>Editing a rule. <button type="button" class="link-button" id="pron-edit-cancel">Cancel</button></p>
       <label>Written <input name="pattern" maxlength="400" required placeholder="Bajor" value="<?= e($prefillWritten) ?>"></label>
       <label>Spoken <small>(empty = say nothing)</small> <input name="replacement" maxlength="200" placeholder="Bay-jor" value="<?= e($prefillSpoken) ?>"></label>
       <label>Note <input name="note" maxlength="300" placeholder="optional"></label>
       <label>Match <select name="match_type"><option value="word">whole word</option><option value="anywhere">anywhere in a word</option><option value="regex">pattern (regex)</option></select></label>
       <label class="check"><input type="checkbox" name="case_sensitive"> match case</label>
-      <button type="submit">Add or update</button>
+      <button type="submit" id="pron-save">Add or update</button>
     </form>
     <details class="regex-helper" id="regex-helper" data-url="<?= e(base_url('rulesets-regex')) ?>" data-project="<?= e($layer === 'project' ? $ref : '') ?>">
       <summary>Pattern builder: find and change text without knowing regex</summary>
@@ -149,6 +150,7 @@ $explain = [
                   <form method="post"><?= $hidden() ?><input type="hidden" name="action" value="move_rule"><input type="hidden" name="id" value="<?= (int) $r['id'] ?>"><input type="hidden" name="how" value="<?= $how ?>"><button type="submit" class="link-button" title="<?= $tip ?>" aria-label="<?= $tip ?>"><?= $mark ?></button></form>
                 <?php endforeach; ?>
               </span>
+              <button type="button" class="link-button" data-edit-rule data-id="<?= (int) $r['id'] ?>" data-written="<?= e((string) $r['pattern']) ?>" data-spoken="<?= e((string) $r['replacement']) ?>" data-note="<?= e((string) $r['note']) ?>" data-case="<?= (int) $r['case_sensitive'] ?>" data-match="<?= e(PronunciationService::typeOf($r)) ?>">edit</button>
               <button type="button" class="link-button" data-wb-load data-written="<?= e((string) $r['pattern']) ?>" data-spoken="<?= e((string) $r['replacement']) ?>" data-layer="<?= e($layer . '|' . $ref) ?>" data-label="rule in this layer" data-case="<?= (int) $r['case_sensitive'] ?>" data-whole="<?= (int) $r['whole_word'] ?>" data-match="<?= e(PronunciationService::typeOf($r)) ?>">try</button>
               <details class="rule-transfer"><summary>move or copy</summary>
                 <form method="post"><?= $hidden() ?><input type="hidden" name="action" value="transfer_rule"><input type="hidden" name="id" value="<?= (int) $r['id'] ?>">

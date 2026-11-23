@@ -58,3 +58,32 @@
     setTimeout(() => row.classList.remove('just-moved'), 2500);
   } catch (error) { /* storage unavailable: the list simply reloads at the top */ }
 })();
+
+// Editing a rule: its values go back into the add form, and saving changes that rule instead of adding another.
+(function () {
+  const form = document.getElementById('add');
+  if (!form) return;
+  const banner = document.getElementById('pron-editing');
+  const save = document.getElementById('pron-save');
+  const stop = () => {
+    form.elements.edit_id.value = '';
+    if (banner) banner.hidden = true;
+    if (save) save.textContent = 'Add or update';
+  };
+  document.addEventListener('click', event => {
+    const button = event.target.closest('[data-edit-rule]');
+    if (!button) return;
+    form.elements.edit_id.value = button.dataset.id;
+    form.elements.pattern.value = button.dataset.written;
+    form.elements.replacement.value = button.dataset.spoken;
+    form.elements.note.value = button.dataset.note || '';
+    form.elements.match_type.value = button.dataset.match || 'word';
+    if (form.elements.case_sensitive) form.elements.case_sensitive.checked = button.dataset.case === '1';
+    if (banner) banner.hidden = false;
+    if (save) save.textContent = 'Save changes';
+    form.scrollIntoView({behavior: 'smooth', block: 'center'});
+    form.elements.pattern.focus();
+  });
+  const cancel = document.getElementById('pron-edit-cancel');
+  if (cancel) cancel.addEventListener('click', () => { form.reset(); stop(); });
+})();

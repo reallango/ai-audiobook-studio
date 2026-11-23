@@ -65,8 +65,8 @@ final class App
                 $action = (string) ($_POST['action'] ?? '');
                 switch ($action) {
                     case 'add_rule':
-                        $svc->save($layer, $ref, (string) ($_POST['pattern'] ?? ''), (string) ($_POST['replacement'] ?? ''), isset($_POST['case_sensitive']), isset($_POST['whole_word']), (string) ($_POST['note'] ?? ''), in_array((string) ($_POST['match_type'] ?? ''), PronunciationService::MATCH_TYPES, true) ? (string) $_POST['match_type'] : null);
-                        self::flash('success', 'Rule saved.');
+                        $svc->save($layer, $ref, (string) ($_POST['pattern'] ?? ''), (string) ($_POST['replacement'] ?? ''), isset($_POST['case_sensitive']), isset($_POST['whole_word']), (string) ($_POST['note'] ?? ''), in_array((string) ($_POST['match_type'] ?? ''), PronunciationService::MATCH_TYPES, true) ? (string) $_POST['match_type'] : null, ($_POST['edit_id'] ?? '') !== '' ? (int) $_POST['edit_id'] : null);
+                        self::flash('success', ($_POST['edit_id'] ?? '') !== '' ? 'Rule changed.' : 'Rule saved.');
                         break;
                     case 'toggle_rule':
                         $svc->setEnabled((int) ($_POST['id'] ?? 0), ($_POST['enabled'] ?? '') === '1');

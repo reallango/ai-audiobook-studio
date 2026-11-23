@@ -171,6 +171,21 @@ check('a pattern rule is tried after plain text rules until arranged', array_col
 $svc->move($rxId, 'top');
 check('an arranged pattern rule can go first', $applyOrd('Deep Space'), 'rx Space');
 
+// editing a rule in place
+$svc->save('set', 'ord', '(\d{2})(\d{2})', '$1-$2', false, true, 'split', 'regex');
+$editRule = array_values(array_filter($svc->rules('set', 'ord'), static fn (array $r): bool => $r['pattern'] === '(\d{2})(\d{2})'))[0];
+$svc->move((int) $editRule['id'], 'top');
+$svc->save('set', 'ord', '(\d{2})(\d{2})x', '$1:$2', true, true, 'changed', 'regex', (int) $editRule['id']);
+$after = array_values(array_filter($svc->rules('set', 'ord'), static fn (array $r): bool => (int) $r['id'] === (int) $editRule['id']))[0];
+check('editing changes the pattern, spoken form, note and case in place', [$after['pattern'], $after['replacement'], $after['note'], (int) $after['case_sensitive']], ['(\d{2})(\d{2})x', '$1:$2', 'changed', 1]);
+check('editing keeps the rule where it was in the order', (int) $svc->rules('set', 'ord')[0]['id'], (int) $editRule['id']);
+$refused = '';
+try { $svc->save('set', 'ord', 'Deep', 'x', false, true, '', null, (int) $editRule['id']); } catch (InvalidArgumentException $e) { $refused = $e->getMessage(); }
+check('editing into another rule\'s written form is refused', str_contains($refused, 'already has that written form'), true);
+$refused = '';
+try { $svc->save('set', 'ord', '(oops', 'x', false, true, '', 'regex', (int) $editRule['id']); } catch (InvalidArgumentException $e) { $refused = $e->getMessage(); }
+check('an edited pattern is validated too', str_starts_with($refused, 'This is not a valid pattern'), true);
+
 @unlink($db);
 echo $failures === 0 ? "\nall passed\n" : "\n$failures failed\n";
 exit($failures === 0 ? 0 : 1);

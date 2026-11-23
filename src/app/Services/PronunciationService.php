@@ -82,7 +82,7 @@ final class PronunciationService
     }
 
     /** Adds a rule, or replaces the spoken form of an existing rule with the same pattern in that layer. */
-    public function save(string $scope, string $ref, string $pattern, string $replacement, bool $caseSensitive = false, bool $wholeWord = true, string $note = '', ?string $matchType = null): void
+    public function save(string $scope, string $ref, string $pattern, string $replacement, bool $caseSensitive = false, bool $wholeWord = true, string $note = '', ?string $matchType = null, ?int $editId = null): void
     {
         $this->assertLayer($scope, $ref);
         $matchType ??= $wholeWord ? 'word' : 'anywhere';
@@ -95,6 +95,17 @@ final class PronunciationService
         // An empty spoken form is allowed: it removes the text from the narration (watermarks, page markers).
         if (mb_strlen($replacement) > 200) throw new InvalidArgumentException('The spoken form is limited to 200 characters.');
         if (mb_strlen($note) > 300) throw new InvalidArgumentException('The note is limited to 300 characters.');
+        if ($editId !== null) {
+            // Editing a rule in place keeps its place in the order and whether it is switched on; the written form may change too.
+            $stored = $isRegex ? $pattern : $this->normalize($pattern);
+            $clash = $this->db()->prepare('SELECT id FROM pronunciation_rules WHERE scope=:s AND scope_ref=:r AND pattern=:p AND id<>:id');
+            $clash->execute(['s' => $scope, 'r' => $ref, 'p' => $stored, 'id' => $editId]);
+            if ($clash->fetch()) throw new InvalidArgumentException('Another rule in this layer already has that written form.');
+            $u = $this->db()->prepare('UPDATE pronunciation_rules SET pattern=:p, replacement=:rep, case_sensitive=:cs, whole_word=:ww, match_type=:mt, note=:n, updated_at=CURRENT_TIMESTAMP WHERE id=:id AND scope=:s AND scope_ref=:r');
+            $u->execute(['p' => $stored, 'rep' => $replacement, 'cs' => (int) $caseSensitive, 'ww' => (int) ($matchType === 'word'), 'mt' => $matchType, 'n' => $note, 'id' => $editId, 's' => $scope, 'r' => $ref]);
+            if ($u->rowCount() === 0) throw new InvalidArgumentException('That rule no longer exists in this layer.');
+            return;
+        }
         $s = $this->db()->prepare(
             'INSERT INTO pronunciation_rules(scope,scope_ref,pattern,replacement,case_sensitive,whole_word,match_type,note)
              VALUES(:s,:r,:p,:rep,:cs,:ww,:mt,:n)
