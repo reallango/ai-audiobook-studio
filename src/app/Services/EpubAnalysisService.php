@@ -19,6 +19,8 @@ final class EpubAnalysisService
         try { $opfPath=$this->opfPath($this->read($zip,'META-INF/container.xml')); $book=$this->package($this->read($zip,$opfPath),$opfPath); $sections=$this->sections($zip,$book); } finally { $zip->close(); }
         $db=Database::connection(); $db->beginTransaction();
         try {
+            // A fresh read of the EPUB replaces the source text, so the chapter structure built on the old text goes too.
+            foreach(['logical_structure_revisions','logical_sections'] as $table) { $db->prepare("DELETE FROM {$table} WHERE project_id=:p")->execute(['p'=>$projectId]); }
             foreach(['import_warnings','source_blocks','source_sections','source_metadata'] as $table) { $db->prepare("DELETE FROM {$table} WHERE project_id=:p")->execute(['p'=>$projectId]); }
             $q=$db->prepare('INSERT INTO source_metadata(project_id,title,creator,language,identifier,package_path,package_version,analyzed_at) VALUES(:p,:t,:c,:l,:i,:path,:v,:at)');
             $q->execute(['p'=>$projectId,'t'=>$book['meta']['title'],'c'=>$book['meta']['creator'],'l'=>$book['meta']['language'],'i'=>$book['meta']['identifier'],'path'=>$opfPath,'v'=>$book['version'],'at'=>gmdate('Y-m-d H:i:s')]);
