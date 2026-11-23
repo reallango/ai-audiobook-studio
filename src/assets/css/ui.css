@@ -288,3 +288,7 @@ mark.chg:hover, mark.chg:focus-visible { filter: brightness(1.25); outline: none
 .pron-table tr.just-moved { outline: 2px solid #3b82f6; outline-offset: -2px; }
 .wb-where { margin-left: .6rem; font-size: .9em; }
 .tc-example { max-width: 28rem; color: var(--muted, #888); font-size: .88em; }
+.export-actions { display: flex; flex-wrap: wrap; gap: .6rem; align-items: center; }
+.export-actions .inline-form, .export-file .inline-form { margin: 0; display: inline-block; }
+.export-file .inline-form { margin-left: .4rem; }
+.export-file .link-button { font-size: inherit; }

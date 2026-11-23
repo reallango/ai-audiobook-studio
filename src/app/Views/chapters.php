@@ -49,16 +49,27 @@ $totalMs = array_sum(array_map(static fn (array $a): int => (int) ($a['duration_
   <section class="export-panel" id="export">
     <h2>Audiobook files</h2>
     <p class="muted">Each chapter is AAC mono at <b><?= (int) $project['audio_bitrate_kbps'] ?> kbps</b> (change it in the project settings). <?= (int) $readyCount ?> of <?= count($rows) ?> chapters have finished audio. The m4b joins the finished chapters, in order, with a chapter marker for each.</p>
+    <?php $m4bUrl = base_url('export', ['id' => $project['id'], 'kind' => 'm4b']); $build = static fn (string $label, string $class = ''): string => '<form method="post" class="inline-form">' . csrf_field() . '<input type="hidden" name="id" value="' . e((string) $project['id']) . '"><input type="hidden" name="action" value="build_m4b"><button type="submit"' . ($class !== '' ? ' class="' . $class . '"' : '') . '>' . $label . '</button></form>'; ?>
     <div class="export-actions">
-      <form method="post"><?= csrf_field() ?><input type="hidden" name="id" value="<?= e((string) $project['id']) ?>"><input type="hidden" name="action" value="build_m4b">
-        <button type="submit"><?= $exportRow ? 'Rebuild the chaptered M4B' : 'Build the chaptered M4B' ?></button></form>
+      <?php if (!$exportRow): ?>
+        <?= $build('Build the chaptered M4B') ?>
+      <?php elseif ($exportCurrent): ?>
+        <a class="button" href="<?= e($m4bUrl) ?>">Download the chaptered M4B</a>
+      <?php else: ?>
+        <?= $build('Rebuild the chaptered M4B') ?>
+      <?php endif; ?>
       <a class="button secondary" href="<?= e(base_url('export', ['id' => $project['id'], 'kind' => 'zip'])) ?>">Download all chapters (M4A in a ZIP)</a>
     </div>
     <?php if ($exportRow): ?>
       <p class="export-file">
         <strong>M4B:</strong> <?= (int) $exportRow['chapter_count'] ?> chapter markers, <?= e($mmss((int) $exportRow['duration_ms'])) ?>, <?= e(number_format($exportRow['byte_size'] / 1048576, 1)) ?> MB, built <?= e((string) $exportRow['built_at']) ?> UTC.
-        <?php if (!$exportCurrent): ?><span class="chapter-status changed">out of date: chapters changed since</span><?php endif; ?>
-        <a href="<?= e(base_url('export', ['id' => $project['id'], 'kind' => 'm4b'])) ?>">Download the M4B</a>
+        <?php if ($exportCurrent): ?>
+          <span class="chapter-status approved">up to date</span>
+          <?= $build('Rebuild', 'link-button') ?>
+        <?php else: ?>
+          <span class="chapter-status changed">out of date: chapters changed since</span>
+          <a href="<?= e($m4bUrl) ?>">Download the old M4B</a>
+        <?php endif; ?>
       </p>
     <?php endif; ?>
   </section>
