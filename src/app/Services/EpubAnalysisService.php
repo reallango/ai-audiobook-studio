@@ -73,7 +73,67 @@ final class EpubAnalysisService
             }
         }
 
+        // Some EPUBs keep the story in divs, spans or loose text instead of paragraphs. When the usual elements
+        // capture only a small part of the page's text, read the text itself, one paragraph per block-level break.
+        $body = $xp->query('//*[local-name()="body"]')?->item(0);
+        if ($body instanceof DOMNode) {
+            $bodyLength = mb_strlen((string) preg_replace('/\s+/u', ' ', trim($body->textContent)));
+            $got = array_sum(array_map(static fn (array $b): int => mb_strlen((string) $b['text']), $blocks));
+            if ($bodyLength > 300 && $got < $bodyLength * 0.5) {
+                $loose = self::looseBlocks($body, $this);
+                $looseLength = array_sum(array_map(static fn (array $b): int => mb_strlen((string) $b['text']), $loose));
+                if ($looseLength > $got * 1.5) $blocks = $loose;
+            }
+        }
+
         return ['title' => $title, 'blocks' => $blocks];
+    }
+
+    /**
+     * Paragraphs read straight from the text of a page: block-level elements and double line breaks end a paragraph.
+     * @return list<array{type:string,text:string,path:string}>
+     */
+    private static function looseBlocks(DOMNode $root, self $service): array
+    {
+        $blockTags = ['div', 'p', 'section', 'article', 'aside', 'header', 'footer', 'main', 'nav', 'ul', 'ol', 'li', 'dl', 'dt', 'dd', 'table', 'tr', 'td', 'th',
+            'blockquote', 'pre', 'figure', 'figcaption', 'center', 'hr', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6'];
+        $out = [];
+        $buffer = '';
+        $owner = $root;
+        $kind = 'p';
+        $brs = 0;
+        $flush = static function () use (&$out, &$buffer, &$owner, &$kind, $service): void {
+            $text = trim((string) preg_replace('/\s+/u', ' ', $buffer));
+            $buffer = '';
+            if ($text === '') return;
+            $out[] = ['type' => $kind, 'text' => $text, 'path' => $service->domPath($owner)];
+        };
+        $walk = static function (DOMNode $node) use (&$walk, &$buffer, &$owner, &$kind, &$brs, $flush, $blockTags): void {
+            foreach ($node->childNodes as $child) {
+                if ($child->nodeType === XML_TEXT_NODE || $child->nodeType === XML_CDATA_SECTION_NODE) {
+                    if (trim($child->nodeValue ?? '') !== '') $brs = 0;
+                    $buffer .= $child->nodeValue;
+                    $owner = $node;
+                } elseif ($child instanceof DOMElement) {
+                    $name = strtolower($child->localName);
+                    if ($name === 'br') {
+                        if (++$brs >= 2) { $flush(); $brs = 0; } else $buffer .= ' ';
+                    } elseif (in_array($name, $blockTags, true)) {
+                        $flush();
+                        $kind = preg_match('/^h[1-6]$/', $name) === 1 ? $name : 'p';
+                        $walk($child);
+                        $flush();
+                        $kind = 'p';
+                        $brs = 0;
+                    } else {
+                        $walk($child);
+                    }
+                }
+            }
+        };
+        $walk($root);
+        $flush();
+        return $out;
     }
 
     private function extractDisplayTitle(
