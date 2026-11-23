@@ -1,5 +1,5 @@
 <?php declare(strict_types=1); $pageTitle=$section['title_hint']?:'Source Preview'; require APP_ROOT.'/app/Views/layout-top.php'; ?>
-<a class="back" href="<?=e(base_url('source-sections',['id'=>$project['id']]))?>">← Source sections</a>
+<a class="back" href="<?=e(rtrim((string)config('app.base_path',''),'/').'/logical_sections.php?project='.rawurlencode((string)$project['id']))?>">← Source and structure</a>
 <section class="page-head"><div><p class="eyebrow">IMMUTABLE SOURCE PREVIEW</p><h1><?=e($section['title_hint']?:$section['href'])?></h1><p class="lead compact"><?=number_format((int)$section['word_count'])?> words · <?=number_format((int)$section['block_count'])?> blocks · <?=e($section['initial_recommendation'])?></p></div></section>
 <section class="source-reader"><?php if(!$blocks):?><p><em>No narratable text blocks were extracted.</em></p><?php endif;?><?php foreach($blocks as $block): $tag=in_array($block['block_type'],['h1','h2','h3','h4','h5','h6'],true)?$block['block_type']:'p'; ?><<?=$tag?> data-block-id="<?=e($block['id'])?>"><?=e($block['source_text'])?></<?=$tag?>><?php endforeach;?></section>
 <?php require APP_ROOT.'/app/Views/layout-bottom.php'; ?>

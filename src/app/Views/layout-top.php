@@ -9,7 +9,7 @@ $projectIdForBack = (string) ($_GET['id'] ?? $_GET['project'] ?? $_POST['id'] ??
 
 // Pages that belong to one project get the project header and tabs instead of a back link.
 $tabByRoute = [
-    'project' => 'overview', 'epub-upload' => 'source', 'source-sections' => 'source', 'source-section' => 'source',
+    'project' => 'overview', 'epub-upload' => 'structure', 'source-sections' => 'structure', 'source-section' => 'structure', 'section-preview' => 'structure',
     'chapters' => 'chapters', 'chapter-review' => 'chapters', 'pronunciation' => 'pronunciation', 'rulesets' => 'pronunciation',
     'textchecks' => 'textchecks',
 ];
@@ -82,8 +82,7 @@ $currentNav = match (true) {
       <nav class="project-tabs" aria-label="Project">
         <?php foreach ([
             'overview' => ['Overview', base_url('project', ['id' => $shellProject['id']])],
-            'source' => ['Source', base_url('source-sections', ['id' => $shellProject['id']])],
-            'structure' => ['Structure', rtrim((string) config('app.base_path', ''), '/') . '/logical_sections.php?project=' . rawurlencode((string) $shellProject['id'])],
+            'structure' => ['Source and structure', rtrim((string) config('app.base_path', ''), '/') . '/logical_sections.php?project=' . rawurlencode((string) $shellProject['id'])],
             'chapters' => ['Chapters and audio', base_url('chapters', ['id' => $shellProject['id']])],
             'textchecks' => ['Text checks', base_url('textchecks', ['id' => $shellProject['id']])],
             'pronunciation' => ['Rulesets', base_url('rulesets', ['layer' => 'project', 'ref' => $shellProject['id']])],

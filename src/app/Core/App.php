@@ -23,7 +23,7 @@ final class App
     public static function run(): void
     {
         $route=trim((string)($_GET['page']??'projects'),'/');
-        try{match($route){'api-health'=>self::json(self::health()),'diagnostics'=>self::view('diagnostics'),'projects','home',''=>self::projects(),'project-create'=>self::createProject(),'project'=>self::project(),'epub-upload'=>self::epubUpload(),'epub-analyze'=>self::epubAnalyze(),'source-sections'=>self::sourceSections(),'source-section'=>self::sourceSection(),'project-archive'=>self::archiveProject(),'project-restore'=>self::restoreProject(),'project-delete'=>self::deleteProject(),'voice-lab'=>self::voiceLab(),'voice-preview'=>self::voicePreview(),'pronunciation'=>self::pronunciation(),'rulesets'=>self::pronunciation(),'pronunciation-rule'=>self::pronunciationRule(),'pronunciation-example'=>self::pronunciationExample(),'rulesets-regex'=>self::regexPreview(),'textchecks'=>self::textChecks(),'chapters'=>self::chapters(),'chapter-review'=>self::chapterReview(),'chapter-audio'=>self::chapterAudio(),'chapter-text'=>self::chapterText(),'audio'=>self::audio(),'export'=>self::export(),default=>self::notFound()};}
+        try{match($route){'api-health'=>self::json(self::health()),'diagnostics'=>self::view('diagnostics'),'projects','home',''=>self::projects(),'project-create'=>self::createProject(),'project'=>self::project(),'epub-upload'=>self::epubUpload(),'epub-analyze'=>self::epubAnalyze(),'source-sections'=>self::sourceSections(),'source-section'=>self::sourceSection(),'project-archive'=>self::archiveProject(),'project-restore'=>self::restoreProject(),'project-delete'=>self::deleteProject(),'voice-lab'=>self::voiceLab(),'voice-preview'=>self::voicePreview(),'pronunciation'=>self::pronunciation(),'rulesets'=>self::pronunciation(),'pronunciation-rule'=>self::pronunciationRule(),'pronunciation-example'=>self::pronunciationExample(),'rulesets-regex'=>self::regexPreview(),'textchecks'=>self::textChecks(),'section-preview'=>self::sectionPreview(),'chapters'=>self::chapters(),'chapter-review'=>self::chapterReview(),'chapter-audio'=>self::chapterAudio(),'chapter-text'=>self::chapterText(),'audio'=>self::audio(),'export'=>self::export(),default=>self::notFound()};}
         catch(Throwable $error){error_log($error->__toString());http_response_code(500);self::view('error',['message'=>config('app.debug',false)?$error->getMessage():'The request could not be completed. Check the application log for details.']);}
     }
     private static function voiceLab():void
@@ -174,6 +174,43 @@ final class App
             'label' => $h['chapter'] !== '' ? $h['chapter'] : 'the book',
         ], $hits);
         self::json(['ok' => true, 'sentences' => $sentences, 'where' => $where, 'sentence' => $sentences[0] ?? null]);
+    }
+
+    /**
+     * One chapter-to-be, read through: GET ?page=section-preview&id=PROJECT&section=LOGICAL_ID. POST keeps or skips it, renames it,
+     * and may carry on to the next one, so a whole book can be gone through quickly.
+     */
+    private static function sectionPreview():void
+    {
+        $project = self::requireProject();
+        $repo = new \App\Repositories\LogicalSectionRepository();
+        $all = $repo->all($project['id']);
+        $id = (string) ($_GET['section'] ?? $_POST['section'] ?? '');
+        $at = null;
+        foreach ($all as $i => $s) if ((string) $s['id'] === $id) $at = $i;
+        if ($at === null) { self::notFound(); return; }
+        $prev = $at > 0 ? (string) $all[$at - 1]['id'] : null;
+        $next = $at < count($all) - 1 ? (string) $all[$at + 1]['id'] : null;
+        if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
+            self::requireCsrf();
+            $action = (string) ($_POST['action'] ?? '');
+            try {
+                $rows = array_map(static fn (array $s): array => ['id' => (string) $s['id'], 'title' => (string) $s['title'], 'included' => (int) $s['included']], $all);
+                if ($action === 'keep' || $action === 'skip') $rows[$at]['included'] = $action === 'keep' ? 1 : 0;
+                elseif ($action === 'rename') {
+                    $title = trim((string) ($_POST['title'] ?? ''));
+                    if ($title === '' || mb_strlen($title) > 200) throw new \InvalidArgumentException('A name must be 1 to 200 characters.');
+                    $rows[$at]['title'] = $title;
+                } else throw new \InvalidArgumentException('Unknown action.');
+                (new \App\Services\LogicalSectionService())->updateAll($project['id'], $rows);
+                self::flash('success', $action === 'rename' ? 'Renamed.' : ($action === 'keep' ? 'Kept in the audiobook.' : 'Left out of the audiobook.'));
+            } catch (Throwable $error) {
+                self::flash('error', $error->getMessage());
+            }
+            $goNext = ($_POST['go'] ?? '') === 'next' && $next !== null;
+            self::redirect('section-preview', ['id' => $project['id'], 'section' => $goNext ? $next : $id]);
+        }
+        self::view('section-preview', ['project' => $project, 'section' => $all[$at], 'blocks' => $repo->blocks($id), 'prev' => $prev, 'next' => $next, 'number' => $at + 1, 'total' => count($all)]);
     }
 
     /** GET ?page=textchecks&id=PROJECT&kind=proper|number|... : things in the book a voice may read badly, to turn into rules. */

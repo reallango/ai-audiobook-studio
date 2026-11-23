@@ -45,7 +45,7 @@ $actions = static function (string $key) use ($project, $sourceAsset, $sourceAna
         case 'source':
             if (!$sourceAsset) { if (!$archived) $out .= $link('Import EPUB', base_url('epub-upload', ['id' => $id]), true); }
             elseif (!$sourceAnalyzed) { if (!$archived) $out .= '<form method="post" action="' . e(base_url('epub-analyze')) . '">' . csrf_field() . '<input type="hidden" name="id" value="' . e($id) . '"><button type="submit">Analyze EPUB</button></form>'; }
-            else $out .= $link('Source sections', base_url('source-sections', ['id' => $id]));
+            else $out .= $link('Source and structure', $logicalUrl);
             break;
         case 'structure':
             if ($sourceAnalyzed) $out .= $link($flow['counts']['total'] > 0 ? 'Edit structure' : 'Build structure', $logicalUrl, $flow['counts']['total'] === 0);

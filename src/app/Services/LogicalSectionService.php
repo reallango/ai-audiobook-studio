@@ -53,6 +53,7 @@ final class LogicalSectionService
                 $title = $group['chapter_number'] !== null
                     ? 'Chapter ' . $group['chapter_number']
                     : trim((string) ($first['title_hint'] ?: pathinfo((string) $first['href'], PATHINFO_FILENAME)));
+                if ($group['chapter_number'] === null && ($named = $this->nameFromText((string) $first['id'])) !== null) $title = $named;
                 $insertLogical->execute(['id' => $logicalId, 'p' => $projectId, 'position' => $position++, 'title' => $title, 'included' => $first['initial_recommendation'] === 'KEEP' ? 1 : 0]);
                 foreach ($group['items'] as $sourceOrder => $item) {
                     $insertSource->execute(['logical' => $logicalId, 'source' => $item['id'], 'source_order' => $sourceOrder]);
@@ -64,6 +65,33 @@ final class LogicalSectionService
             if ($db->inTransaction()) $db->rollBack();
             throw $error;
         }
+    }
+
+    /** A heading found in the first lines of a source section, if it has one. */
+    private function nameFromText(string $sourceSectionId): ?string
+    {
+        $s = Database::connection()->prepare('SELECT block_type, source_text FROM source_blocks WHERE source_section_id=:s ORDER BY block_index LIMIT 6');
+        $s->execute(['s' => $sourceSectionId]);
+        $rows = $s->fetchAll();
+        return \App\Services\SectionAdvisor::name(array_column($rows, 'source_text'), array_column($rows, 'block_type'));
+    }
+
+    /**
+     * What the advisor suggests for each section: whether to keep it and a name taken from its text. Nothing is saved.
+     * @return list<array{id:string,keep:bool,name:?string,words:int}>
+     */
+    public function suggestions(string $projectId): array
+    {
+        $repo = new LogicalSectionRepository();
+        $out = [];
+        foreach ($repo->all($projectId) as $section) {
+            $blocks = $repo->blocks((string) $section['id']);
+            $texts = array_column($blocks, 'source_text');
+            $href = (string) ($section['composition'][0]['href'] ?? '');
+            $out[] = ['id' => (string) $section['id'], 'keep' => \App\Services\SectionAdvisor::keep((string) $section['title'], $href, $texts),
+                'name' => \App\Services\SectionAdvisor::name($texts, array_column($blocks, 'block_type')), 'words' => (int) $section['word_count']];
+        }
+        return $out;
     }
 
     private function chapterNumber(array $section): ?int

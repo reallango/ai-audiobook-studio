@@ -292,3 +292,17 @@ mark.chg:hover, mark.chg:focus-visible { filter: brightness(1.25); outline: none
 .export-actions .inline-form, .export-file .inline-form { margin: 0; display: inline-block; }
 .export-file .inline-form { margin-left: .4rem; }
 .export-file .link-button { font-size: inherit; }
+
+/* Source and structure */
+.setup-buttons { display: flex; flex-wrap: wrap; gap: .6rem 1rem; align-items: center; }
+.setup-number { display: inline-flex; flex-wrap: wrap; gap: .5rem; align-items: center; }
+.setup-number label { display: inline-flex; flex-direction: row; gap: .3rem; align-items: center; margin: 0; }
+.setup-number input[type=number] { width: 5rem; }
+.setup-note { min-height: 1.4em; margin: .5rem 0 0; }
+.preview-link { font-size: .9em; margin-left: .8rem; }
+.source-files { margin-top: 1rem; }
+.source-files summary { cursor: pointer; font-weight: 600; }
+.preview-actions { display: flex; flex-wrap: wrap; gap: .6rem; align-items: center; margin-bottom: .8rem; }
+.preview-actions .inline-form, .rename-row .inline-form { margin: 0; }
+.rename-row { display: flex; flex-wrap: wrap; gap: .6rem; align-items: end; }
+.rename-row label { flex: 1 1 18rem; }
