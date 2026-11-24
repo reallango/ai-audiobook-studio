@@ -91,7 +91,7 @@ $currentNav = match (true) {
         <?php endforeach; ?>
       </nav>
     </div>
-    <div class="activity" id="activity" hidden data-url="<?= e(base_url('activity', ['id' => $shellProject['id']])) ?>" data-route="<?= e((string) $route) ?>" data-reload="chapters"
+    <div class="activity" id="activity" data-url="<?= e(base_url('activity', ['id' => $shellProject['id']])) ?>" data-route="<?= e((string) $route) ?>" data-reload="chapters"
          data-chapter-url="<?= e(base_url('chapter-review', ['id' => $shellProject['id']]) . '&section=') ?>"></div>
     <script src="<?= e(base_url('assets/js/activity.js')) ?>" defer></script>
   </div>

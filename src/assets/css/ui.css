@@ -324,3 +324,5 @@ mark.chg:hover, mark.chg:focus-visible { filter: brightness(1.25); outline: none
 .act-failed .act-state { color: #ef6b7b; }
 .act-item progress { width: 8rem; height: .6rem; }
 .act-msg { color: var(--muted, #9db0c9); }
+
+.act-idle { cursor: default; }

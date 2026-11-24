@@ -59,8 +59,15 @@
 
   function render(data) {
     bar.textContent = '';
-    if (!data.items.length) { bar.hidden = true; return; }
     bar.hidden = false;
+    if (!data.items.length) {
+      bar.classList.remove('busy', 'has-failed');
+      const idle = el('div', 'act-head act-idle');
+      idle.append(el('span', 'act-title', 'Activity'), el('span', 'act-summary', 'Nothing running. Chapter audio and M4B builds show here while they work.'),
+        el('span', 'act-toggle', data.worker ? 'worker online' : 'worker not seen recently'));
+      bar.append(idle);
+      return;
+    }
     bar.classList.toggle('busy', data.active > 0);
     const failed = data.items.some(i => i.status === 'FAILED');
     bar.classList.toggle('has-failed', failed);
