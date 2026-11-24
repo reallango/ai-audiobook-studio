@@ -104,6 +104,28 @@ try { $svc->updateAll('p', [['id' => 'L1', 'title' => 'x', 'included' => 1]]); }
 check('a stale page that leaves out sections is refused', isset($e) ? str_contains($e->getMessage(), 'Reload the page') : false, true);
 check('and records no undo step', $revisions(), $before);
 
+// the Arrange page's single changes: each is one undo step, and a change that changes nothing records none
+$ids = array_column($rows(), 0);
+$svc->rename('p', $ids[0], 'Prologue');
+check('rename', $rows()[0][1], 'Prologue');
+$steps = $revisions();
+$svc->rename('p', $ids[0], 'Prologue');
+check('renaming to the same name records no step', $revisions(), $steps);
+$svc->setIncluded('p', [$ids[0]], false);
+check('leave out', $rows()[0][2], 0);
+$svc->move('p', $ids[0], 1);
+check('move down', array_column($rows(), 0)[1], $ids[0]);
+$svc->move('p', $ids[0], -1);
+check('move back up', array_column($rows(), 0)[0], $ids[0]);
+$svc->nameChapters('p', [$ids[1], $ids[2]], 4, false);
+check('name selected as chapters from a number, and keep them', [array_column($rows(), 1)[1], array_column($rows(), 1)[2], array_column($rows(), 2)[1]], ['Chapter 4', 'Chapter 5', 1]);
+$svc->undo('p');
+check('one undo takes back the whole naming', array_column($rows(), 1)[1] !== 'Chapter 4', true);
+$refusedName = '';
+try { $svc->rename('p', $ids[0], '   '); } catch (InvalidArgumentException $e) { $refusedName = $e->getMessage(); }
+check('an empty name is refused', $refusedName, 'A name must be 1 to 200 characters.');
+check('suggestions can be applied as one step', is_int($svc->applySuggestions('p', [], true, false)), true);
+
 @unlink($db);
 echo $failures === 0 ? "\nall passed\n" : "\n$failures failed\n";
 exit($failures === 0 ? 0 : 1);

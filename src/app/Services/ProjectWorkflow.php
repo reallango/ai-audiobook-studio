@@ -103,20 +103,30 @@ final class ProjectWorkflow
                 ? ['type' => 'link', 'label' => 'Import the EPUB', 'reason' => 'Start by adding the book.', 'href' => base_url('epub-upload', ['id' => $id])]
                 : ['type' => 'post', 'label' => 'Analyze the EPUB', 'reason' => 'Reads the chapters and paragraphs out of the book.', 'action' => 'epub-analyze'],
             'structure' => ['type' => 'link', 'label' => 'Build the audiobook structure', 'reason' => 'Group the book\'s files into chapters and choose what is read.',
-                'href' => rtrim((string) config('app.base_path', ''), '/') . '/logical_sections.php?project=' . rawurlencode($id)],
-            'voice' => ['type' => 'link', 'label' => 'Choose a voice', 'reason' => 'Pick the narrator in the settings.', 'href' => '#settings'],
-            'review' => ['type' => 'link', 'label' => 'Review and approve chapters', 'reason' => "$approved of $reviewable approved. Read the narration, fix what sounds wrong, then approve.", 'href' => base_url('chapters', ['id' => $id])],
+                'href' => base_url('arrange', ['id' => $id])],
+            'voice' => ['type' => 'link', 'label' => 'Choose a voice', 'reason' => 'Pick the narrator in the settings.', 'href' => base_url('project', ['id' => $id]) . '#settings'],
+            'review' => ['type' => 'link', 'label' => 'Review and approve chapters', 'reason' => "$approved of $reviewable approved. Read the narration, fix what sounds wrong, then approve.", 'href' => base_url('proofread', ['id' => $id])],
             'generate' => $working > 0
-                ? ['type' => 'link', 'label' => 'Audio is being generated', 'reason' => "$ready of $approved chapters are done so far.", 'href' => base_url('chapters', ['id' => $id])]
+                ? ['type' => 'link', 'label' => 'Audio is being generated', 'reason' => "$ready of $approved chapters are done so far.", 'href' => base_url('proofread', ['id' => $id])]
                 : ($failed > 0
-                    ? ['type' => 'link', 'label' => 'Fix the failed chapters', 'reason' => "$failed chapter(s) failed. Open them for the reason, then retry.", 'href' => base_url('chapters', ['id' => $id])]
-                    : ['type' => 'link', 'label' => 'Generate audio', 'reason' => ($approved - $ready) . ' approved chapter(s) still need audio.', 'href' => base_url('chapters', ['id' => $id])]),
-            'export' => ['type' => 'link', 'label' => 'Build the audiobook file', 'reason' => 'Join the finished chapters into a chaptered M4B, or download the chapter files.', 'href' => base_url('chapters', ['id' => $id]) . '#export'],
-            default => ['type' => 'link', 'label' => 'Download the audiobook', 'reason' => 'Everything is done. The M4B is ready.', 'href' => base_url('export', ['id' => $id, 'kind' => 'm4b'])],
+                    ? ['type' => 'link', 'label' => 'Fix the failed chapters', 'reason' => "$failed chapter(s) failed. Open them for the reason, then retry.", 'href' => base_url('proofread', ['id' => $id])]
+                    : ['type' => 'link', 'label' => 'Generate audio', 'reason' => ($approved - $ready) . ' approved chapter(s) still need audio.', 'href' => base_url('proofread', ['id' => $id])]),
+            'export' => ['type' => 'link', 'label' => 'Build the audiobook file', 'reason' => 'Join the finished chapters into a chaptered M4B, or download the chapter files.', 'href' => base_url('export', ['id' => $id])],
+            default => ['type' => 'link', 'label' => 'Download the audiobook', 'reason' => 'Everything is done. The M4B is ready.', 'href' => base_url('export', ['id' => $id])],
         };
         if ($archived) $next = ['type' => 'none', 'label' => 'This project is archived', 'reason' => 'Restore it to continue.'];
 
+        // The four stages the Library shows: where the book is, and how far along that stage.
+        $stage = match ($current) {
+            'source', 'voice' => ['key' => 'import', 'progress' => $imported ? 0.5 : 0.0],
+            'structure' => ['key' => 'arrange', 'progress' => 0.0],
+            'review', 'generate' => ['key' => 'proofread', 'progress' => $reviewable > 0 ? ($approved + $ready) / (2 * $reviewable) : 0.0],
+            'export' => ['key' => 'export', 'progress' => 0.5],
+            default => ['key' => 'done', 'progress' => 1.0],
+        };
+
         return [
+            'stage' => $stage,
             'steps' => $steps,
             'next' => $next,
             'counts' => ['total' => $total, 'included' => $included, 'reviewable' => $reviewable, 'approved' => $approved, 'ready' => $ready, 'working' => $working,

@@ -1,5 +1,5 @@
 <?php declare(strict_types=1); $pageTitle='Create Project'; require APP_ROOT.'/app/Views/layout-top.php'; ?>
-<section class="page-head"><div><p class="eyebrow">NEW BOOK</p><h1>Create project</h1><p class="lead compact">This creates the permanent project container. EPUB upload is intentionally handled in the next phase.</p></div></section>
+<section class="page-head"><div><h1>New audiobook</h1><p class="lead compact">Name the book and choose a voice. You add the EPUB on the next page. To start straight from a file, drop it on the Library page instead.</p></div></section>
 <section class="form-panel"><?php if($errors): ?><div class="error-list"><strong>Correct the following:</strong><ul><?php foreach($errors as $error):?><li><?=e($error)?></li><?php endforeach;?></ul></div><?php endif; ?>
 <form method="post" action="<?=e(base_url('project-create'))?>"><?=csrf_field()?>
 <label>Book title<input name="title" maxlength="200" required autofocus value="<?=e((string)$values['title'])?>" placeholder="The Autobiography of Benjamin Sisko"></label>

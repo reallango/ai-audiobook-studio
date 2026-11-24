@@ -71,7 +71,7 @@ $f = $flow(true, true);
 check('a chapter whose segments are done but not joined is still to do', [$f['counts']['ready'], $f['counts']['todo']], [1, 1]);
 $gen->assemble('p', 'L2');
 $f = $flow(true, true);
-check('all chapters ready: the next step is the audiobook file', [$f['next']['label'], $f['counts']['ready'], $f['steps'][4]['state'], $f['steps'][5]['state'], str_contains($f['next']['href'], '#export')], ['Build the audiobook file', 2, 'done', 'current', true]);
+check('all chapters ready: the next step is the audiobook file', [$f['next']['label'], $f['counts']['ready'], $f['steps'][4]['state'], $f['steps'][5]['state'], str_contains($f['next']['href'], 'page=export')], ['Build the audiobook file', 2, 'done', 'current', true]);
 
 $pdo->exec("INSERT INTO jobs(id,project_id,job_type,status) VALUES('j','p','x','QUEUED')");
 $pdo->exec("INSERT INTO generation_jobs(id,project_id,logical_section_id,status) VALUES('g1','p','L2','RUNNING')");

@@ -9,7 +9,7 @@ final class LogicalSectionService
      * so a page left open from before a split or combine cannot scramble the order.
      * @param list<array{id:string,title:string,included:int|bool}> $changes
      */
-    public function updateAll(string $p, array $changes): void
+    public function updateAll(string $p, array $changes, string $description = 'Titles, inclusion, or order changed.'): void
     {
         $db = Database::connection();
         $now = $db->prepare('SELECT id FROM logical_sections WHERE project_id=:p');
@@ -22,7 +22,7 @@ final class LogicalSectionService
         if ($have !== $sorted) throw new InvalidArgumentException('The sections changed since this page was opened. Reload the page and make the change again.');
         $db->beginTransaction();
         try {
-            $this->revision($p, 'bulk_update', 'Titles, inclusion, or order changed.');
+            $this->revision($p, 'bulk_update', $description);
             $temp = $db->prepare('UPDATE logical_sections SET position=:n WHERE project_id=:p AND id=:id');
             foreach ($changes as $i => $r) $temp->execute(['n' => -100000 - $i, 'p' => $p, 'id' => $r['id']]);
             $q = $db->prepare('UPDATE logical_sections SET position=:n,title=:t,included=:i,updated_at=CURRENT_TIMESTAMP WHERE project_id=:p AND id=:id');
@@ -33,6 +33,95 @@ final class LogicalSectionService
             throw $e;
         }
     }
+    /** Renames one section. */
+    public function rename(string $p, string $id, string $title): void
+    {
+        $title = trim($title);
+        if ($title === '' || mb_strlen($title) > 200) throw new InvalidArgumentException('A name must be 1 to 200 characters.');
+        $this->changeRows($p, 'Renamed a section.', static function (array $rows) use ($id, $title): array {
+            foreach ($rows as &$r) if ($r['id'] === $id) $r['title'] = $title;
+            return $rows;
+        });
+    }
+
+    /** Keeps the given sections in the audiobook, or leaves them out. @param list<string> $ids */
+    public function setIncluded(string $p, array $ids, bool $included): void
+    {
+        $this->changeRows($p, ($included ? 'Kept ' : 'Left out ') . count($ids) . ' section' . (count($ids) === 1 ? '' : 's') . '.', static function (array $rows) use ($ids, $included): array {
+            foreach ($rows as &$r) if (in_array($r['id'], $ids, true)) $r['included'] = (int) $included;
+            return $rows;
+        });
+    }
+
+    /** Moves a section one place up (-1) or down (+1). */
+    public function move(string $p, string $id, int $delta): void
+    {
+        $this->changeRows($p, 'Moved a section.', static function (array $rows) use ($id, $delta): array {
+            $at = array_search($id, array_column($rows, 'id'), true);
+            if ($at === false) throw new InvalidArgumentException('Section not found.');
+            $to = $at + ($delta < 0 ? -1 : 1);
+            if ($to < 0 || $to >= count($rows)) return $rows;
+            [$rows[$at], $rows[$to]] = [$rows[$to], $rows[$at]];
+            return $rows;
+        });
+    }
+
+    /**
+     * Names the given sections "Chapter N" in book order from $start, keeps them, and optionally keeps a heading found
+     * in their text as a subtitle ("Chapter 3: Habana"). @param list<string> $ids
+     */
+    public function nameChapters(string $p, array $ids, int $start, bool $keepHeadings): void
+    {
+        $names = $keepHeadings ? array_column($this->suggestions($p), 'name', 'id') : [];
+        $this->changeRows($p, 'Named ' . count($ids) . ' section' . (count($ids) === 1 ? '' : 's') . ' as chapters.', static function (array $rows) use ($ids, $start, $names): array {
+            $n = max(1, $start);
+            foreach ($rows as &$r) {
+                if (!in_array($r['id'], $ids, true)) continue;
+                $heading = (string) ($names[$r['id']] ?? '');
+                $subtitle = '';
+                if ($heading !== '' && preg_match('/^(chapter|part|book|section)\b/i', $heading) !== 1) $subtitle = ': ' . $heading;
+                elseif (preg_match('/^\S+\s+\S+:\s+(.+)$/u', $heading, $m) === 1) $subtitle = ': ' . $m[1];
+                $r['title'] = mb_substr('Chapter ' . $n++ . $subtitle, 0, 200);
+                $r['included'] = 1;
+            }
+            return $rows;
+        });
+    }
+
+    /**
+     * Applies the advisor's suggestions (what to keep and/or names found in the text) to the given sections, or to all
+     * of them when none are given, as one step that can be undone. Returns how many sections changed.
+     * @param list<string> $ids
+     */
+    public function applySuggestions(string $p, array $ids, bool $keep, bool $names): int
+    {
+        $found = [];
+        foreach ($this->suggestions($p) as $s) $found[$s['id']] = $s;
+        $changed = 0;
+        $this->changeRows($p, $keep && !$names ? 'Applied the suggestions for what to keep.' : 'Named sections from their text.', static function (array $rows) use ($ids, $keep, $names, $found, &$changed): array {
+            foreach ($rows as &$r) {
+                if ($ids !== [] && !in_array($r['id'], $ids, true)) continue;
+                $s = $found[$r['id']] ?? null;
+                if ($s === null) continue;
+                $before = [$r['title'], $r['included']];
+                if ($keep) $r['included'] = (int) $s['keep'];
+                if ($names && $s['name'] !== null) $r['title'] = mb_substr((string) $s['name'], 0, 200);
+                if ([$r['title'], $r['included']] !== $before) $changed++;
+            }
+            return $rows;
+        });
+        return $changed;
+    }
+
+    /** Changes titles, inclusion or order through updateAll(), so every change is one undoable step; no change, no step. */
+    private function changeRows(string $p, string $description, callable $change): void
+    {
+        $rows = array_map(static fn (array $s): array => ['id' => (string) $s['id'], 'title' => (string) $s['title'], 'included' => (int) $s['included']], (new LogicalSectionRepository())->all($p));
+        $new = array_values($change($rows));
+        if ($new === $rows) return;
+        $this->updateAll($p, $new, $description);
+    }
+
     /**
      * Joins adjacent sections into the first one. Hand edits and skipped paragraphs travel with their paragraphs; the
      * joined chapter needs a new approval and new audio, since its text is different.

@@ -1,53 +1,56 @@
 <?php
 declare(strict_types=1);
 
-$pageTitle = $pageTitle ?? 'AI Audiobook Studio';
+/*
+ * The app shell. Views may set before including this file:
+ *   $pageTitle   the window title
+ *   $projectNav  ['project' => row] to show the book's stage bar (pages that also have $project get it automatically)
+ *   $layout      'bare' for pages that lay out their own width (the new pages); default is the centred container
+ */
+$pageTitle = $pageTitle ?? 'Audiobook Studio';
+$layout = $layout ?? 'container';
 $flash = flash_message();
 $route = trim((string) ($_GET['page'] ?? ''), '/');
 $script = basename((string) ($_SERVER['SCRIPT_NAME'] ?? ''));
-$projectIdForBack = (string) ($_GET['id'] ?? $_GET['project'] ?? $_POST['id'] ?? $_POST['project'] ?? '');
 
-// Pages that belong to one project get the project header and tabs instead of a back link.
-$tabByRoute = [
-    'project' => 'overview', 'epub-upload' => 'structure', 'source-sections' => 'structure', 'source-section' => 'structure', 'section-preview' => 'structure',
-    'chapters' => 'chapters', 'chapter-review' => 'chapters', 'pronunciation' => 'pronunciation', 'rulesets' => 'pronunciation',
-    'textchecks' => 'textchecks',
+// Which stage of a book this page belongs to.
+$stageByRoute = [
+    'arrange' => 'arrange', 'section-preview' => 'arrange', 'source-section' => 'arrange', 'source-sections' => 'arrange',
+    'proofread' => 'proofread', 'chapters' => 'proofread', 'chapter-review' => 'proofread',
+    'export' => 'export',
+    'pronounce' => 'pronounce', 'textchecks' => 'pronounce',
+    'project' => 'settings', 'epub-upload' => 'settings',
 ];
-$activeTab = $script === 'logical_sections.php' ? 'structure' : ($tabByRoute[$route] ?? null);
-$shellProject = $projectNav['project'] ?? (($activeTab !== null && isset($project) && is_array($project) && isset($project['id'], $project['title'])) ? $project : null);
-if (in_array($route, ['pronunciation', 'rulesets'], true) && !isset($projectNav)) $shellProject = null;   // the page sets it when a project layer is shown
+$stage = $script === 'logical_sections.php' ? 'arrange' : ($stageByRoute[$route] ?? null);
+$book = $projectNav['project'] ?? (($stage !== null && isset($project) && is_array($project) && isset($project['id'], $project['title'])) ? $project : null);
+if ($route === 'rulesets' && !isset($projectNav)) $book = null;
 
-if ($shellProject !== null) {
-    $backUrl = null;
-    $backLabel = null;
-} elseif (!isset($backUrl, $backLabel)) {
-    $backUrl = null;
-    $backLabel = null;
-    if (in_array($route, ['project-create', 'diagnostics'], true)) {
-        $backUrl = base_url();
-        $backLabel = 'Projects';
-    }
-}
-
-$navLinks = [
-    ['projects', 'Projects', base_url()],
-    ['voice-lab', 'Voice Lab', base_url('voice-lab')],
-    ['rulesets', 'Rulesets', base_url('rulesets')],
+$mainNav = [
+    ['library', 'Library', base_url()],
+    ['rulesets', 'Shared rulesets', base_url('rulesets')],
+    ['voices', 'Voices', base_url('voice-lab')],
     ['diagnostics', 'Diagnostics', base_url('diagnostics')],
 ];
-$currentNav = match (true) {
-    $route === 'voice-lab' => 'voice-lab',
+$currentMain = match (true) {
+    $route === 'voice-lab' => 'voices',
     $route === 'diagnostics' => 'diagnostics',
-    in_array($route, ['pronunciation', 'rulesets'], true) && $shellProject === null => 'rulesets',
-    default => 'projects',
+    $route === 'rulesets' || $route === 'pronunciation' => 'rulesets',
+    default => 'library',
 };
+$bookNav = $book === null ? [] : [
+    ['arrange', 'Arrange', base_url('arrange', ['id' => $book['id']])],
+    ['proofread', 'Proofread and listen', base_url('proofread', ['id' => $book['id']])],
+    ['export', 'Export', base_url('export', ['id' => $book['id']])],
+    ['pronounce', 'Pronunciation', base_url('pronounce', ['id' => $book['id']])],
+    ['settings', 'Settings', base_url('project', ['id' => $book['id']])],
+];
 ?>
 <!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title><?= e($pageTitle) ?> | AI Audiobook Studio</title>
+  <title><?= e($pageTitle) ?> · Audiobook Studio</title>
   <link rel="stylesheet" href="<?= e(base_url('assets/css/app.css')) ?>">
   <link rel="stylesheet" href="<?= e(base_url('assets/css/phase1.css')) ?>">
   <link rel="stylesheet" href="<?= e(base_url('assets/css/phase2a.css')) ?>">
@@ -58,44 +61,32 @@ $currentNav = match (true) {
   <link rel="stylesheet" href="<?= e(base_url('assets/css/phase2c4.css')) ?>">
   <link rel="stylesheet" href="<?= e(base_url('assets/css/phase1-final.css')) ?>">
   <link rel="stylesheet" href="<?= e(base_url('assets/css/ui.css')) ?>">
+  <link rel="stylesheet" href="<?= e(base_url('assets/css/studio.css')) ?>">
 </head>
 <body>
-<header class="topbar">
-  <div class="topbar-leading">
-    <a class="brand" href="<?= e(base_url()) ?>"><span class="brand-mark">A</span><span class="brand-name">AI Audiobook Studio</span></a>
-  </div>
-  <nav class="main-nav" aria-label="Main">
-    <?php foreach ($navLinks as [$key, $label, $href]): ?>
-      <a href="<?= e($href) ?>" <?= $currentNav === $key ? 'class="active" aria-current="page"' : '' ?>><?= e($label) ?></a>
-    <?php endforeach; ?>
-  </nav>
+<a class="visually-hidden" href="#main">Skip to the page</a>
+<header class="app-top">
+  <a class="app-brand" href="<?= e(base_url()) ?>"><span class="app-mark" aria-hidden="true">AS</span>Audiobook Studio</a>
+  <?php if ($book !== null): ?>
+    <span class="app-sep" aria-hidden="true">/</span>
+    <a class="app-book" href="<?= e(base_url('proofread', ['id' => $book['id']])) ?>" title="<?= e((string) $book['title']) ?>"><?= e((string) $book['title']) ?></a>
+    <?php if (($book['status'] ?? '') === 'ARCHIVED'): ?><span class="app-archived">Archived</span><?php endif; ?>
+    <nav class="app-nav" aria-label="Book">
+      <?php foreach ($bookNav as [$key, $label, $href]): ?>
+        <a href="<?= e($href) ?>" <?= $stage === $key ? 'aria-current="page"' : '' ?>><?= e($label) ?></a>
+      <?php endforeach; ?>
+    </nav>
+  <?php else: ?>
+    <nav class="app-nav" aria-label="Main">
+      <?php foreach ($mainNav as [$key, $label, $href]): ?>
+        <a href="<?= e($href) ?>" <?= $currentMain === $key ? 'aria-current="page"' : '' ?>><?= e($label) ?></a>
+      <?php endforeach; ?>
+    </nav>
+  <?php endif; ?>
+  <div class="app-spacer"></div>
+  <div class="activity" id="activity" data-url="<?= e(base_url('activity', $book !== null ? ['id' => $book['id']] : [])) ?>"
+       data-reload="<?= e(in_array($route, ['proofread', 'export'], true) ? 'yes' : '') ?>"
+       data-chapter-url="<?= e(base_url('proofread') . '&id=') ?>"></div>
 </header>
-<main class="container">
-<?php if ($shellProject !== null): ?>
-  <div class="project-shell">
-    <div class="project-shell-head">
-      <div class="project-shell-title">
-        <a class="crumb" href="<?= e(base_url()) ?>">Projects</a><span class="crumb-sep">/</span>
-        <a class="project-name" href="<?= e(base_url('project', ['id' => $shellProject['id']])) ?>"><?= e((string) $shellProject['title']) ?></a>
-        <?php if (($shellProject['status'] ?? '') === 'ARCHIVED'): ?><span class="badge status-<?= e(strtolower((string) $shellProject['status'])) ?>"><?= e(str_replace('_', ' ', (string) $shellProject['status'])) ?></span><?php endif; ?>
-      </div>
-      <nav class="project-tabs" aria-label="Project">
-        <?php foreach ([
-            'overview' => ['Overview', base_url('project', ['id' => $shellProject['id']])],
-            'structure' => ['Source and structure', rtrim((string) config('app.base_path', ''), '/') . '/logical_sections.php?project=' . rawurlencode((string) $shellProject['id'])],
-            'chapters' => ['Chapters and audio', base_url('chapters', ['id' => $shellProject['id']])],
-            'textchecks' => ['Text checks', base_url('textchecks', ['id' => $shellProject['id']])],
-            'pronunciation' => ['Rulesets', base_url('rulesets', ['layer' => 'project', 'ref' => $shellProject['id']])],
-        ] as $tab => [$label, $href]): ?>
-          <a href="<?= e($href) ?>" <?= $activeTab === $tab ? 'class="active" aria-current="page"' : '' ?>><?= e($label) ?></a>
-        <?php endforeach; ?>
-      </nav>
-    </div>
-    <div class="activity" id="activity" data-url="<?= e(base_url('activity', ['id' => $shellProject['id']])) ?>" data-route="<?= e((string) $route) ?>" data-reload="chapters"
-         data-chapter-url="<?= e(base_url('chapter-review', ['id' => $shellProject['id']]) . '&section=') ?>"></div>
-    <script src="<?= e(base_url('assets/js/activity.js')) ?>" defer></script>
-  </div>
-<?php elseif ($backUrl): ?>
-  <a class="global-back" href="<?= e($backUrl) ?>">&larr; <span><?= e((string) $backLabel) ?></span></a>
-<?php endif; ?>
-<?php if ($flash): ?><div class="flash <?= e($flash['type']) ?>"><?= e($flash['message']) ?></div><?php endif; ?>
+<?php if ($flash): ?><div class="flash <?= e($flash['type']) ?>" role="status"><?= e($flash['message']) ?></div><?php endif; ?>
+<main id="main" class="<?= $layout === 'bare' ? 'app-main' : 'container' ?>">

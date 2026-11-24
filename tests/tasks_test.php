@@ -34,7 +34,7 @@ check('an unknown task is refused', $refused, 'Unknown task.');
 
 $a = $tasks->activity('p');
 check('chapter audio shows with its progress', [$a['items'][0]['kind'], $a['items'][0]['status'], $a['items'][0]['done'], $a['items'][0]['total'], $a['active']], ['chapter', 'RUNNING', 3, 4, 1]);
-check('the label names the chapter', $a['items'][0]['label'], 'Audio for Chapter 1');
+check('the label names the chapter and its book', [$a['items'][0]['label'], $a['items'][0]['book']], ['Chapter 1', 'Book']);
 
 // a queued build runs in the worker and its result is reported
 $pdo->exec("INSERT INTO background_tasks(id,project_id,kind,status) VALUES('t','p','m4b','QUEUED')");

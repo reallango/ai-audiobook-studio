@@ -12,6 +12,7 @@ use App\Services\VoiceCatalog;
 use App\Services\PronunciationService;
 use App\Services\NarrationService;
 use App\Services\TextCheckService;
+use App\Services\ProjectWorkflow;
 use App\Services\GenerationService;
 use App\Services\JobService;
 use App\Services\ChapterSettings;
@@ -23,7 +24,7 @@ final class App
     public static function run(): void
     {
         $route=trim((string)($_GET['page']??'projects'),'/');
-        try{match($route){'api-health'=>self::json(self::health()),'diagnostics'=>self::view('diagnostics'),'projects','home',''=>self::projects(),'project-create'=>self::createProject(),'project'=>self::project(),'epub-upload'=>self::epubUpload(),'epub-analyze'=>self::epubAnalyze(),'source-sections'=>self::sourceSections(),'source-section'=>self::sourceSection(),'project-archive'=>self::archiveProject(),'project-restore'=>self::restoreProject(),'project-delete'=>self::deleteProject(),'voice-lab'=>self::voiceLab(),'voice-preview'=>self::voicePreview(),'pronunciation'=>self::pronunciation(),'rulesets'=>self::pronunciation(),'pronunciation-rule'=>self::pronunciationRule(),'pronunciation-example'=>self::pronunciationExample(),'rulesets-regex'=>self::regexPreview(),'textchecks'=>self::textChecks(),'activity'=>self::activity(),'section-preview'=>self::sectionPreview(),'chapters'=>self::chapters(),'chapter-review'=>self::chapterReview(),'chapter-audio'=>self::chapterAudio(),'chapter-text'=>self::chapterText(),'audio'=>self::audio(),'export'=>self::export(),default=>self::notFound()};}
+        try{match($route){'api-health'=>self::json(self::health()),'diagnostics'=>self::view('diagnostics'),'projects','home',''=>self::projects(),'quick-import'=>self::quickImport(),'arrange'=>self::arrange(),'proofread'=>self::proofread(),'pronounce'=>self::pronounce(),'arrange-action'=>self::arrangeAction(),'section-text'=>self::sectionText(),'project-create'=>self::createProject(),'project'=>self::project(),'epub-upload'=>self::epubUpload(),'epub-analyze'=>self::epubAnalyze(),'source-sections'=>self::sourceSections(),'source-section'=>self::sourceSection(),'project-archive'=>self::archiveProject(),'project-restore'=>self::restoreProject(),'project-delete'=>self::deleteProject(),'voice-lab'=>self::voiceLab(),'voice-preview'=>self::voicePreview(),'pronunciation'=>self::pronunciation(),'rulesets'=>self::pronunciation(),'pronunciation-rule'=>self::pronunciationRule(),'pronunciation-example'=>self::pronunciationExample(),'rulesets-regex'=>self::regexPreview(),'textchecks'=>self::textChecks(),'activity'=>self::activity(),'section-preview'=>self::sectionPreview(),'chapters'=>self::chapters(),'chapter-review'=>self::chapterReview(),'chapter-audio'=>self::chapterAudio(),'chapter-text'=>self::chapterText(),'audio'=>self::audio(),'export'=>self::export(),default=>self::notFound()};}
         catch(Throwable $error){error_log($error->__toString());http_response_code(500);self::view('error',['message'=>config('app.debug',false)?$error->getMessage():'The request could not be completed. Check the application log for details.']);}
     }
     private static function voiceLab():void
@@ -55,6 +56,7 @@ final class App
         if ($layer === 'set' && !$svc->set($ref)) $ref = $sets ? (string) $sets[0]['id'] : '';
         if ($layer === 'project' && !(new ProjectRepository())->find($ref)) $ref = $projects ? (string) $projects[0]['id'] : '';
 
+        if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST' && $layer === 'project' && $ref !== '' && ($_GET['test'] ?? '') === '') self::redirect('pronounce', ['id' => $ref]);
         if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
             $back = ['layer' => $layer, 'ref' => $ref];
             if (!Csrf::validate(isset($_POST['_token']) ? (string) $_POST['_token'] : null)) {
@@ -129,6 +131,7 @@ final class App
             } catch (Throwable $error) {
                 self::flash('error', self::userMessage($error));
             }
+            if (($_POST['return'] ?? '') === 'pronounce' && $layer === 'project') self::redirect('pronounce', ['id' => $ref, 'tab' => (string) ($_POST['tab'] ?? 'rules')]);
             self::redirect('rulesets', $back);
         }
 
@@ -182,35 +185,7 @@ final class App
      */
     private static function sectionPreview():void
     {
-        $project = self::requireProject();
-        $repo = new \App\Repositories\LogicalSectionRepository();
-        $all = $repo->all($project['id']);
-        $id = (string) ($_GET['section'] ?? $_POST['section'] ?? '');
-        $at = null;
-        foreach ($all as $i => $s) if ((string) $s['id'] === $id) $at = $i;
-        if ($at === null) { self::notFound(); return; }
-        $prev = $at > 0 ? (string) $all[$at - 1]['id'] : null;
-        $next = $at < count($all) - 1 ? (string) $all[$at + 1]['id'] : null;
-        if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
-            self::requireCsrf();
-            $action = (string) ($_POST['action'] ?? '');
-            try {
-                $rows = array_map(static fn (array $s): array => ['id' => (string) $s['id'], 'title' => (string) $s['title'], 'included' => (int) $s['included']], $all);
-                if ($action === 'keep' || $action === 'skip') $rows[$at]['included'] = $action === 'keep' ? 1 : 0;
-                elseif ($action === 'rename') {
-                    $title = trim((string) ($_POST['title'] ?? ''));
-                    if ($title === '' || mb_strlen($title) > 200) throw new \InvalidArgumentException('A name must be 1 to 200 characters.');
-                    $rows[$at]['title'] = $title;
-                } else throw new \InvalidArgumentException('Unknown action.');
-                (new \App\Services\LogicalSectionService())->updateAll($project['id'], $rows);
-                self::flash('success', $action === 'rename' ? 'Renamed.' : ($action === 'keep' ? 'Kept in the audiobook.' : 'Left out of the audiobook.'));
-            } catch (Throwable $error) {
-                self::flash('error', self::userMessage($error));
-            }
-            $goNext = ($_POST['go'] ?? '') === 'next' && $next !== null;
-            self::redirect('section-preview', ['id' => $project['id'], 'section' => $goNext ? $next : $id]);
-        }
-        self::view('section-preview', ['project' => $project, 'section' => $all[$at], 'blocks' => $repo->blocks($id), 'prev' => $prev, 'next' => $next, 'number' => $at + 1, 'total' => count($all)]);
+        self::redirect('arrange', ['id' => (string) ($_GET['id'] ?? $_POST['id'] ?? ''), 'section' => (string) ($_GET['section'] ?? $_POST['section'] ?? '')]);
     }
 
     /**
@@ -228,27 +203,55 @@ final class App
         return $error->getMessage();
     }
 
+    /**
+     * A book's pronunciation: its rules with the rules it inherits, suggestions from the text, and the shared rulesets
+     * it uses. Changes post to the Rulesets handlers and come back here.
+     */
+    private static function pronounce():void
+    {
+        $project = self::requireProject();
+        $id = (string) $project['id'];
+        $tab = in_array($_GET['tab'] ?? '', ['rules', 'suggestions', 'shared'], true) ? (string) $_GET['tab'] : 'rules';
+        $svc = new PronunciationService();
+        $voice = (string) ($project['active_voice_profile_id'] ?? '') ?: VoiceCatalog::DEFAULT_VOICE;
+        $own = $svc->rules('project', $id);
+        $inherited = array_values(array_filter(PronunciationService::order(array_values($svc->effective($id, $voice))), static fn (array $r): bool => ($r['layer'] ?? '') !== 'project'));
+        $kind = (string) ($_GET['kind'] ?? 'proper');
+        if (!isset(TextCheckService::KINDS[$kind])) $kind = 'proper';
+        $suggestions = [];
+        $kindCounts = [];
+        if ($tab === 'suggestions') {
+            $texts = (new NarrationService())->sourceTexts($id);
+            $effective = $svc->effective($id, $voice);
+            $dictionary = TextCheckService::dictionary();
+            $caps = (int) ($project['normalize_caps'] ?? 1) === 1;
+            foreach (array_keys(TextCheckService::KINDS) as $k) {
+                $found = TextCheckService::scan($texts, $k, $effective, $dictionary, $caps);
+                $kindCounts[$k] = count($found);
+                if ($k === $kind) $suggestions = $found;
+            }
+        }
+        $linked = $svc->projectSets($id);
+        $linkedIds = array_column($linked, 'id');
+        self::view('pronounce', [
+            'project' => $project, 'tab' => $tab, 'own' => $own, 'inherited' => $inherited, 'voice' => $voice,
+            'kind' => $kind, 'suggestions' => $suggestions, 'kindCounts' => $kindCounts, 'hasDictionary' => TextCheckService::dictionary() !== null,
+            'linked' => $linked, 'available' => array_values(array_filter($svc->sets(), static fn (array $s): bool => !in_array($s['id'], $linkedIds, true))),
+        ]);
+    }
+
     /** GET ?page=activity&id=PROJECT -> JSON {worker, active, items[]}: the background work for a project, for the activity bar. */
     private static function activity():void
     {
         $id = (string) ($_GET['id'] ?? '');
-        if ($id === '' || !(new ProjectRepository())->find($id)) { self::json(['ok' => false, 'message' => 'Project not found.'], 404); return; }
-        self::json(['ok' => true] + (new \App\Services\TaskService())->activity($id));
+        if ($id !== '' && !(new ProjectRepository())->find($id)) { self::json(['ok' => false, 'message' => 'Project not found.'], 404); return; }
+        self::json(['ok' => true, 'scope' => $id === '' ? 'all' : 'book'] + (new \App\Services\TaskService())->activity($id === '' ? null : $id));
     }
 
     /** GET ?page=textchecks&id=PROJECT&kind=proper|number|... : things in the book a voice may read badly, to turn into rules. */
     private static function textChecks():void
     {
-        $id = (string) ($_GET['id'] ?? '');
-        $project = $id !== '' ? (new ProjectRepository())->find($id) : null;
-        if (!$project) { self::notFound(); return; }
-        $kind = (string) ($_GET['kind'] ?? 'proper');
-        if (!isset(TextCheckService::KINDS[$kind])) $kind = 'proper';
-        $voice = (string) ($project['active_voice_profile_id'] ?? '') ?: VoiceCatalog::DEFAULT_VOICE;
-        $svc = new PronunciationService();
-        $dictionary = TextCheckService::dictionary();
-        $rows = TextCheckService::scan((new NarrationService())->sourceTexts($id), $kind, $svc->effective($id, $voice), $dictionary, (int) ($project['normalize_caps'] ?? 1) === 1);
-        self::view('textchecks', ['project' => $project, 'kind' => $kind, 'rows' => $rows, 'hasDictionary' => $dictionary !== null, 'projectSets' => $svc->projectSets($id), 'voice' => $voice]);
+        self::redirect('pronounce', ['id' => (string) ($_GET['id'] ?? ''), 'tab' => 'suggestions'] + (isset($_GET['kind']) ? ['kind' => (string) $_GET['kind']] : []));
     }
 
     /** GET ?page=rulesets-regex&pattern=...&case=0|1&project=ID -> {valid, error, count, capped, examples:[{before,match,after}]}: a live check of a regex against the book. */
@@ -352,6 +355,7 @@ final class App
         $project = self::requireProject();
         $projectId = (string) $project['id'];
         $narration = new NarrationService();
+        $back = (string) ($_POST['section'] ?? '');
         if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
             try {
                 if (!Csrf::validate(isset($_POST['_token']) ? (string) $_POST['_token'] : null)) throw new \InvalidArgumentException('Security token expired. Try again.');
@@ -359,8 +363,8 @@ final class App
                 $action = (string) ($_POST['action'] ?? '');
                 if ($action === 'build_m4b') {
                     (new \App\Services\TaskService())->enqueue($projectId, 'm4b');
-                    self::flash('success', 'Building the chaptered M4B in the background. Watch the activity bar at the top of the page; the download appears here when it is done.');
-                    self::redirect('chapters', ['id' => $projectId]);
+                    self::flash('success', 'Building the audiobook in the background. The Activity button at the top shows how it is going; the download appears here when it is done.');
+                    self::redirect('export', ['id' => $projectId]);
                 }
                 if ($action === 'approve_all') {
                     // Approves every included chapter that is not approved for its current text (new, or changed since approval).
@@ -372,8 +376,8 @@ final class App
                         $narration->approve($projectId, (string) $row['id']);
                         $approvedNow++;
                     }
-                    self::flash('success', $approvedNow > 0 ? "Approved $approvedNow chapter" . ($approvedNow === 1 ? '' : 's') . ($skipped > 0 ? " ($skipped with no text left out)" : '') . '. Generate their audio when you are ready.' : 'Every chapter with text was already approved.');
-                    self::redirect('chapters', ['id' => $projectId]);
+                    self::flash('success', $approvedNow > 0 ? "Approved $approvedNow chapter" . ($approvedNow === 1 ? '' : 's') . ($skipped > 0 ? " ($skipped with no text left out)" : '') . '. Make their audio when you are ready.' : 'Every chapter with text was already approved.');
+                    self::redirect('proofread', ['id' => $projectId] + ($back !== '' ? ['section' => $back] : []));
                 }
                 if ($action !== 'generate_all') throw new \InvalidArgumentException('Unknown action.');
                 $overview = $narration->overview($projectId);
@@ -385,23 +389,52 @@ final class App
                     $jobs->enqueue($projectId, (string) $row['id']);
                     $queued++;
                 }
-                self::flash('success', $queued > 0 ? "Queued $queued chapter(s). The worker handles them one after another; this page shows the progress." : 'Nothing to queue: every approved chapter is up to date or already queued.');
+                self::flash('success', $queued > 0 ? "Making audio for $queued chapter" . ($queued === 1 ? '' : 's') . '. The Activity button at the top shows the progress.' : 'Nothing to make: every approved chapter is up to date or already waiting.');
             } catch (Throwable $error) {
                 self::flash('error', self::userMessage($error));
             }
-            self::redirect('chapters', ['id' => $projectId]);
+            self::redirect('proofread', ['id' => $projectId] + ($back !== '' ? ['section' => $back] : []));
         }
-        $rows = $narration->overview($projectId);
+        self::redirect('proofread', ['id' => $projectId]);
+    }
+
+    /**
+     * Proofread and listen: one chapter's narration beside the list of chapters and the sound test. With no chapter
+     * given it opens the first one that still needs a look.
+     */
+    private static function proofread():void
+    {
+        $project = self::requireProject();
+        $projectId = (string) $project['id'];
+        $svc = new NarrationService();
+        $rows = $svc->overview($projectId);
+        if (!$rows) { self::flash('error', 'No chapter is read aloud yet. Choose what is read on Arrange.'); self::redirect('arrange', ['id' => $projectId]); }
+        $sectionId = (string) ($_GET['section'] ?? '');
+        if (!in_array($sectionId, array_column($rows, 'id'), true)) {
+            $sectionId = (string) $rows[0]['id'];
+            foreach ($rows as $r) if ($r['status'] !== 'approved' && (int) $r['words'] > 0) { $sectionId = (string) $r['id']; break; }
+        }
+        $generation = new GenerationService();
         try {
-            $audio = (new GenerationService())->summaries($projectId, $rows);
+            $summaries = $generation->summaries($projectId, $rows);
         } catch (\InvalidArgumentException $error) {
-            $audio = [];
+            $summaries = [];
         }
-        $exports = new ExportService();
-        $exportRow = $exports->exportRow($projectId);
-        $readyCount = count(array_filter($audio, static fn (array $a): bool => $a['state'] === 'ready'));
-        self::view('chapters', ['project' => $project, 'rows' => $rows, 'audio' => $audio, 'workerOnline' => JobService::workerOnline(),
-            'exportRow' => $exportRow, 'exportCurrent' => $exportRow !== null && $readyCount > 0 && $exports->isCurrent($projectId, $exportRow), 'readyCount' => $readyCount]);
+        try {
+            $audio = $generation->status($projectId, $sectionId);
+        } catch (\InvalidArgumentException $error) {
+            $audio = null;
+        }
+        $order = array_column($rows, 'id');
+        $at = array_search($sectionId, $order, true);
+        $todo = 0;
+        foreach ($rows as $r) if ($r['status'] === 'approved' && in_array($summaries[$r['id']]['state'] ?? '', ['none', 'partial', 'outdated', 'failed'], true)) $todo++;
+        self::view('proofread', [
+            'project' => $project, 'rows' => $rows, 'summaries' => $summaries, 'chapter' => $svc->chapter($projectId, $sectionId), 'audio' => $audio,
+            'job' => (new JobService())->forChapter($sectionId), 'workerOnline' => JobService::workerOnline(), 'audioToken' => Csrf::token(),
+            'prevId' => $at !== false && $at > 0 ? $order[$at - 1] : null, 'nextId' => $at !== false && $at < count($order) - 1 ? $order[$at + 1] : null,
+            'focus' => (string) ($_GET['b'] ?? ''), 'todo' => $todo,
+        ]);
     }
 
     /** One chapter: original blocks beside the narration text, per-block exclude and edit, approve. */
@@ -430,7 +463,8 @@ final class App
                         break;
                     case 'approve':
                         $svc->approve($projectId, $sectionId);
-                        self::flash('success', 'Chapter approved for generation.');
+                        self::flash('success', 'Approved.');
+                        if (($_POST['then'] ?? '') !== '') { self::redirect('proofread', ['id' => $projectId, 'section' => (string) $_POST['then']]); }
                         break;
                     case 'unapprove':
                         $svc->unapprove($projectId, $sectionId);
@@ -441,28 +475,9 @@ final class App
             } catch (Throwable $error) {
                 self::flash('error', self::userMessage($error));
             }
-            self::redirect('chapter-review', ['id' => $projectId, 'section' => $sectionId] + ($focus !== '' ? ['b' => $focus] : []));
+            self::redirect('proofread', ['id' => $projectId, 'section' => $sectionId] + ($focus !== '' ? ['b' => $focus] : []));
         }
-
-        try {
-            $chapter = $svc->chapter($projectId, $sectionId);
-        } catch (\InvalidArgumentException $error) {
-            self::notFound();
-            return;
-        }
-        $order = array_column($svc->overview($projectId), 'id');
-        $at = array_search($sectionId, $order, true);
-        try {
-            $audio = (new GenerationService())->status($projectId, $sectionId);
-        } catch (\InvalidArgumentException $error) {
-            $audio = null; // archived project, or an invalid project voice
-        }
-        self::view('chapter-review', [
-            'project' => $project, 'chapter' => $chapter, 'focus' => (string) ($_GET['b'] ?? ''), 'audio' => $audio,
-            'audioToken' => Csrf::token(), 'job' => (new JobService())->forChapter($sectionId), 'workerOnline' => JobService::workerOnline(),
-            'prevId' => $at !== false && $at > 0 ? $order[$at - 1] : null,
-            'nextId' => $at !== false && $at < count($order) - 1 ? $order[$at + 1] : null,
-        ]);
+        self::redirect('proofread', ['id' => $projectId, 'section' => $sectionId] + (($_GET['b'] ?? '') !== '' ? ['b' => (string) $_GET['b']] : []));
     }
 
     /** POST JSON {_token, project_id, section, action: prepare|next|assemble|reset, segment_id?} -> JSON. One step per call. */
@@ -576,6 +591,23 @@ final class App
         $slug = trim((string) preg_replace('/[^A-Za-z0-9]+/', '-', (string) $project['title']), '-') ?: 'audiobook';
         $exports = new ExportService();
         $kind = (string) ($_GET['kind'] ?? '');
+        if ($kind === '') {                                      // the Export page itself
+            $rows = (new NarrationService())->overview($projectId);
+            try {
+                $summaries = (new GenerationService())->summaries($projectId, $rows);
+            } catch (\InvalidArgumentException $error) {
+                $summaries = [];
+            }
+            $exportRow = $exports->exportRow($projectId);
+            $ready = count(array_filter($summaries, static fn (array $s): bool => $s['state'] === 'ready'));
+            $meta = (new SourceAnalysisRepository())->metadata($projectId);
+            self::view('export', [
+                'project' => $project, 'rows' => $rows, 'summaries' => $summaries, 'exportRow' => $exportRow, 'ready' => $ready,
+                'exportCurrent' => $exportRow !== null && $ready > 0 && $exports->isCurrent($projectId, $exportRow),
+                'building' => (new \App\Services\TaskService())->isBusy($projectId), 'author' => (string) ($meta['creator'] ?? ''),
+            ]);
+            return;
+        }
         if ($kind === 'm4b') {
             $path = $exports->m4bFile($projectId);
             if ($path === null) { self::notFound(); return; }
@@ -637,12 +669,133 @@ final class App
         if ($delete) @unlink($path);
     }
 
-    private static function projects():void{$show=($_GET['archived']??'')==='1';self::view('projects',['projects'=>(new ProjectRepository())->all($show),'showArchived'=>$show]);}
+    /** The Library: every book with where it stands and its next step. */
+    private static function projects():void
+    {
+        $show = ($_GET['archived'] ?? '') === '1';
+        $assets = new SourceAssetRepository();
+        $analysis = new SourceAnalysisRepository();
+        $cards = [];
+        foreach ((new ProjectRepository())->all($show) as $p) {
+            $asset = $assets->findByProject((string) $p['id']);
+            $analyzed = $analysis->analyzed((string) $p['id']);
+            try {
+                $flow = ProjectWorkflow::build($p, $asset !== null, $analyzed, $asset['original_name'] ?? null);
+            } catch (Throwable $e) {
+                error_log('library card: ' . $e->getMessage());
+                $flow = null;
+            }
+            $meta = $analyzed ? $analysis->metadata((string) $p['id']) : null;
+            $cards[] = ['project' => $p, 'flow' => $flow, 'author' => (string) ($meta['creator'] ?? '')];
+        }
+        self::view('projects', ['cards' => $cards, 'showArchived' => $show, 'archivedCount' => count((new ProjectRepository())->all(true)) - count((new ProjectRepository())->all(false))]);
+    }
+
+    /** Arrange: which parts of the book are read, their names and their order. */
+    private static function arrange():void
+    {
+        $project = self::requireProject();
+        $id = (string) $project['id'];
+        $analysis = new SourceAnalysisRepository();
+        if (!$analysis->analyzed($id)) { self::flash('error', 'Import the EPUB first, on the Settings page.'); self::redirect('project', ['id' => $id]); }
+        $repo = new \App\Repositories\LogicalSectionRepository();
+        $svc = new \App\Services\LogicalSectionService();
+        if (!$repo->exists($id)) {
+            try { $svc->initialize($id); } catch (\InvalidArgumentException $e) { /* nothing to build from yet */ }
+        }
+        $sections = $repo->all($id);
+        $advice = [];
+        foreach ($svc->suggestions($id) as $s) $advice[$s['id']] = $s;
+        self::view('arrange', [
+            'project' => $project, 'sections' => $sections, 'advice' => $advice, 'lastRevision' => $repo->lastRevision($id),
+            'sourceFiles' => $analysis->sections($id), 'metadata' => $analysis->metadata($id), 'focus' => (string) ($_GET['section'] ?? ''),
+        ]);
+    }
+
+    /** POST JSON {_token, project, action, ...} -> {ok, message}: one change on the Arrange page, each one undoable. */
+    private static function arrangeAction():void
+    {
+        $fail = static function (int $status, string $message): void { self::json(['ok' => false, 'message' => $message], $status); };
+        if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') { $fail(405, 'POST is required.'); return; }
+        $x = json_decode((string) file_get_contents('php://input'), true);
+        if (!is_array($x)) { $fail(400, 'The request was not valid JSON.'); return; }
+        if (!Csrf::validate($x['_token'] ?? null)) { $fail(419, 'Security token expired. Reload the page.'); return; }
+        $project = (new ProjectRepository())->find((string) ($x['project'] ?? ''));
+        if (!$project) { $fail(404, 'Project not found.'); return; }
+        if (($project['status'] ?? '') === 'ARCHIVED') { $fail(422, 'Restore the project before changing its chapters.'); return; }
+        $p = (string) $project['id'];
+        $svc = new \App\Services\LogicalSectionService();
+        $ids = array_values(array_map('strval', is_array($x['ids'] ?? null) ? $x['ids'] : []));
+        try {
+            $message = match ((string) ($x['action'] ?? '')) {
+                'rename' => (function () use ($svc, $p, $x): string { $svc->rename($p, (string) ($x['id'] ?? ''), (string) ($x['title'] ?? '')); return 'Saved.'; })(),
+                'keep' => (function () use ($svc, $p, $ids, $x): string { $svc->setIncluded($p, $ids, !empty($x['value'])); return 'Saved.'; })(),
+                'move' => (function () use ($svc, $p, $x): string { $svc->move($p, (string) ($x['id'] ?? ''), (int) ($x['delta'] ?? 0)); return 'Moved.'; })(),
+                'combine' => (function () use ($svc, $p, $ids): string { $svc->combine($p, $ids); return 'Combined ' . count($ids) . ' sections into one chapter.'; })(),
+                'split' => (function () use ($svc, $p, $x): string { $svc->split($p, (string) ($x['id'] ?? ''), (string) ($x['block'] ?? ''), (string) ($x['title'] ?? '')); return 'Split into two sections.'; })(),
+                'name_chapters' => (function () use ($svc, $p, $ids, $x): string { $svc->nameChapters($p, $ids, (int) ($x['start'] ?? 1), !empty($x['headings'])); return 'Named ' . count($ids) . ' chapters.'; })(),
+                'suggest_keep' => (function () use ($svc, $p, $ids): string { $n = $svc->applySuggestions($p, $ids, true, false); return $n > 0 ? "Changed $n section" . ($n === 1 ? '' : 's') . ' to match the suggestion. Undo puts them back.' : 'Everything already matches the suggestion.'; })(),
+                'suggest_names' => (function () use ($svc, $p, $ids): string { $n = $svc->applySuggestions($p, $ids, false, true); return $n > 0 ? "Named $n section" . ($n === 1 ? '' : 's') . ' from their text. Undo puts the old names back.' : 'No new names were found in the text.'; })(),
+                'undo' => (function () use ($svc, $p): string { $svc->undo($p); return 'Undone.'; })(),
+                default => throw new \InvalidArgumentException('Unknown action.'),
+            };
+            $last = (new \App\Repositories\LogicalSectionRepository())->lastRevision($p);
+            self::json(['ok' => true, 'message' => $message, 'undo' => $last ? (string) $last['description'] : null]);
+        } catch (Throwable $error) {
+            $fail(422, self::userMessage($error));
+        }
+    }
+
+    /** GET ?page=section-text&id=PROJECT&section=ID -> {ok, title, words, blocks:[{id,text,heading}]}: the reading panel on Arrange. */
+    private static function sectionText():void
+    {
+        $project = (new ProjectRepository())->find((string) ($_GET['id'] ?? ''));
+        $repo = new \App\Repositories\LogicalSectionRepository();
+        $section = $project ? $repo->find((string) $project['id'], (string) ($_GET['section'] ?? '')) : null;
+        if (!$section) { self::json(['ok' => false, 'message' => 'Section not found.'], 404); return; }
+        $blocks = array_map(static fn (array $b): array => ['id' => (string) $b['id'], 'text' => (string) $b['source_text'], 'heading' => in_array($b['block_type'], ['h1', 'h2', 'h3', 'h4', 'h5', 'h6'], true)], $repo->blocks((string) $section['id']));
+        self::json(['ok' => true, 'title' => (string) $section['title'], 'included' => (int) $section['included'] === 1, 'blocks' => array_slice($blocks, 0, 400), 'more' => max(0, count($blocks) - 400)]);
+    }
+
+    /**
+     * POST an EPUB from the Library: a new book is made from it in one step (project, upload, analysis, chapters),
+     * named after the book's own title, and opens on Arrange.
+     */
+    private static function quickImport():void
+    {
+        self::requirePost();
+        self::requireCsrf();
+        $file = $_FILES['epub'] ?? [];
+        $name = (string) ($file['name'] ?? '');
+        if ($name === '' || !is_uploaded_file((string) ($file['tmp_name'] ?? ''))) { self::flash('error', 'Choose an EPUB file to start a new audiobook.'); self::redirect('projects'); }
+        $title = trim((string) preg_replace('/[_\s]+/', ' ', preg_replace('/\.epub$/i', '', basename($name)) ?? ''));
+        $title = mb_substr($title !== '' ? $title : 'New audiobook', 0, 160);
+        try {
+            $project = (new ProjectService())->create($title, 'kokoro', VoiceCatalog::DEFAULT_VOICE, AudioEncoder::DEFAULT_BITRATE);
+        } catch (Throwable $error) {
+            self::flash('error', self::userMessage($error));
+            self::redirect('projects');
+        }
+        $id = (string) $project['id'];
+        try {
+            (new EpubUploadService())->upload($id, $file);
+            (new EpubAnalysisService())->analyze($id);
+            $meta = (new SourceAnalysisRepository())->metadata($id);
+            $bookTitle = trim((string) ($meta['title'] ?? ''));
+            if ($bookTitle !== '') \App\Core\Database::connection()->prepare('UPDATE projects SET title=:t, updated_at=CURRENT_TIMESTAMP WHERE id=:id')->execute(['t' => mb_substr($bookTitle, 0, 160), 'id' => $id]);
+            (new \App\Services\LogicalSectionService())->initialize($id);
+            self::flash('success', 'The book is in. Check which parts are read and what each chapter is called.');
+            self::redirect('arrange', ['id' => $id]);
+        } catch (Throwable $error) {
+            self::flash('error', 'The book was created but the EPUB could not be read: ' . self::userMessage($error) . ' You can try another file from its Settings page.');
+            self::redirect('project', ['id' => $id]);
+        }
+    }
     private static function createProject():void{$errors=[];$values=['title'=>'','provider'=>'kokoro','voice'=>VoiceCatalog::DEFAULT_VOICE,'bitrate'=>AudioEncoder::DEFAULT_BITRATE];if($_SERVER['REQUEST_METHOD']==='POST'){$values=['title'=>(string)($_POST['title']??''),'provider'=>(string)($_POST['provider']??'kokoro'),'voice'=>(string)($_POST['voice']??''),'bitrate'=>(int)($_POST['bitrate']??96)];if(!Csrf::validate($_POST['_token']??null))$errors[]='Security token expired. Reload the page and try again.';if(!$errors)try{$project=(new ProjectService())->create($values['title'],$values['provider'],$values['voice'],$values['bitrate']);self::flash('success','Project created.');self::redirect('project',['id'=>$project['id']]);}catch(Throwable $error){$errors[]=$error->getMessage();}}self::view('project-create',['errors'=>$errors,'values'=>$values]);}
     private static function project():void{$project=self::requireProject();$asset=(new SourceAssetRepository())->findByProject($project['id']);$analysis=new SourceAnalysisRepository();self::view('project',['project'=>$project,'sourceAsset'=>$asset,'sourceAnalyzed'=>$analysis->analyzed($project['id'])]);}
     private static function epubUpload():void{$project=self::requireProject();$repo=new SourceAssetRepository();if($repo->findByProject($project['id'])){self::flash('error','This project already has an immutable source EPUB.');self::redirect('project',['id'=>$project['id']]);}$errorMessage=null;if($_SERVER['REQUEST_METHOD']==='POST'){self::requireCsrf();try{$asset=(new EpubUploadService())->upload($project['id'],$_FILES['epub']??[]);self::flash('success','EPUB stored with SHA-256 '.$asset['sha256'].'.');self::redirect('project',['id'=>$project['id']]);}catch(Throwable $error){$errorMessage=$error->getMessage();}}self::view('epub-upload',['project'=>$project,'errorMessage'=>$errorMessage]);}
-    private static function epubAnalyze():void{self::requirePost();self::requireCsrf();$project=self::requireProject();try{$result=(new EpubAnalysisService())->analyze($project['id'],($_POST['replace']??'')==='yes');self::flash('success','Created '.$result['sections'].' source sections and '.$result['blocks'].' source blocks.');self::redirect('source-sections',['id'=>$project['id']]);}catch(Throwable $error){self::flash('error',$error->getMessage());self::redirect('project',['id'=>$project['id']]);}}
-    private static function sourceSections():void{$project=self::requireProject();$repo=new SourceAnalysisRepository();if(!$repo->analyzed($project['id'])){self::flash('error','Analyze the EPUB first.');self::redirect('project',['id'=>$project['id']]);}self::view('source-sections',['project'=>$project,'metadata'=>$repo->metadata($project['id']),'sections'=>$repo->sections($project['id']),'warnings'=>$repo->warnings($project['id'])]);}
+    private static function epubAnalyze():void{self::requirePost();self::requireCsrf();$project=self::requireProject();try{$result=(new EpubAnalysisService())->analyze($project['id'],($_POST['replace']??'')==='yes');self::flash('success','Created '.$result['sections'].' source sections and '.$result['blocks'].' source blocks.');self::redirect('arrange',['id'=>$project['id']]);}catch(Throwable $error){self::flash('error',$error->getMessage());self::redirect('project',['id'=>$project['id']]);}}
+    private static function sourceSections():void{self::redirect('arrange',['id'=>(string)($_GET['id']??'')]);}
     private static function sourceSection():void{$project=self::requireProject();$repo=new SourceAnalysisRepository();$section=$repo->section($project['id'],(string)($_GET['section']??''));if(!$section){self::notFound();return;}self::view('source-section',['project'=>$project,'section'=>$section,'blocks'=>$repo->blocks($section['id'])]);}
     private static function archiveProject():void{self::requirePost();self::requireCsrf();(new ProjectRepository())->archive((string)($_POST['id']??''));self::flash('success','Project archived.');self::redirect('projects');}
     private static function restoreProject():void{self::requirePost();self::requireCsrf();$id=(string)($_POST['id']??'');(new ProjectRepository())->restore($id);self::flash('success','Project restored.');self::redirect('project',['id'=>$id]);}

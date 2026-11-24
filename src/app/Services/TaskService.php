@@ -81,56 +81,63 @@ final class TaskService
      * Everything going on for a project, newest first, for the activity bar.
      * @return array{worker:bool,task_worker:bool,active:int,ahead:int,ahead_books:list<string>,items:list<array<string,mixed>>}
      */
-    public function activity(string $projectId): array
+    public function activity(?string $projectId = null): array
     {
         $db = $this->db();
         $items = [];
+        $where = $projectId !== null ? 'j.project_id=:p AND ' : '';
+        $args = $projectId !== null ? ['p' => $projectId] : [];
 
         $jobs = $db->prepare(
-            "SELECT j.status, j.message, j.requested_at, j.started_at, j.finished_at, j.logical_section_id AS section, s.title, s.position,
+            "SELECT j.status, j.message, j.requested_at, j.started_at, j.finished_at, j.project_id, p.title AS book, j.logical_section_id AS section, s.title, s.position,
                     (SELECT COUNT(*) FROM segments g WHERE g.logical_section_id=j.logical_section_id) AS total,
                     (SELECT COUNT(*) FROM segments g WHERE g.logical_section_id=j.logical_section_id AND g.status='DONE') AS done
-             FROM generation_jobs j JOIN logical_sections s ON s.id=j.logical_section_id
-             WHERE j.project_id=:p AND (j.status IN ('QUEUED','RUNNING') OR j.finished_at > datetime('now','-30 minutes'))
-             ORDER BY CASE j.status WHEN 'RUNNING' THEN 0 WHEN 'QUEUED' THEN 1 ELSE 2 END, s.position
-             LIMIT 60"
+             FROM generation_jobs j JOIN logical_sections s ON s.id=j.logical_section_id JOIN projects p ON p.id=j.project_id
+             WHERE $where(j.status IN ('QUEUED','RUNNING') OR j.finished_at > datetime('now','-30 minutes'))
+             ORDER BY CASE j.status WHEN 'RUNNING' THEN 0 WHEN 'QUEUED' THEN 1 ELSE 2 END, j.requested_at, s.position
+             LIMIT 80"
         );
-        $jobs->execute(['p' => $projectId]);
+        $jobs->execute($args);
         foreach ($jobs->fetchAll() as $j) {
             $items[] = [
-                'kind' => 'chapter', 'label' => 'Audio for ' . $j['title'], 'status' => $j['status'], 'message' => (string) $j['message'],
+                'kind' => 'chapter', 'label' => (string) $j['title'], 'status' => $j['status'], 'message' => (string) $j['message'],
                 'done' => (int) $j['done'], 'total' => (int) $j['total'], 'section' => (string) $j['section'],
+                'project' => (string) $j['project_id'], 'book' => (string) $j['book'],
                 'started' => $j['started_at'], 'finished' => $j['finished_at'],
             ];
         }
 
         $tasks = $db->prepare(
-            "SELECT * FROM background_tasks WHERE project_id=:p AND (status IN ('QUEUED','RUNNING') OR finished_at > datetime('now','-30 minutes')) ORDER BY requested_at DESC LIMIT 10"
+            "SELECT t.*, p.title AS book FROM background_tasks t JOIN projects p ON p.id=t.project_id
+             WHERE " . ($projectId !== null ? 't.project_id=:p AND ' : '') . "(t.status IN ('QUEUED','RUNNING') OR t.finished_at > datetime('now','-30 minutes'))
+             ORDER BY t.requested_at DESC LIMIT 10"
         );
-        $tasks->execute(['p' => $projectId]);
-        foreach ($tasks->fetchAll() as $t) {
+        $tasks->execute($args);
+        foreach ($tasks->fetchAll() as $task) {
             array_unshift($items, [
-                'kind' => (string) $t['kind'], 'label' => self::KINDS[$t['kind']] ?? (string) $t['kind'], 'status' => $t['status'], 'message' => (string) $t['message'],
-                'done' => 0, 'total' => 0, 'section' => '', 'started' => $t['started_at'], 'finished' => $t['finished_at'],
+                'kind' => (string) $task['kind'], 'label' => self::KINDS[$task['kind']] ?? (string) $task['kind'], 'status' => $task['status'], 'message' => (string) $task['message'],
+                'done' => 0, 'total' => 0, 'section' => '', 'project' => (string) $task['project_id'], 'book' => (string) $task['book'],
+                'started' => $task['started_at'], 'finished' => $task['finished_at'],
             ]);
         }
 
         // Chapters from other books that the worker will do before this book's waiting chapters.
         $ahead = 0;
         $aheadBooks = [];
-        $mine = $db->prepare("SELECT MIN(requested_at) FROM generation_jobs WHERE project_id=:p AND status='QUEUED'");
-        $mine->execute(['p' => $projectId]);
-        $oldest = $mine->fetchColumn();
-        $runningQuery = $db->prepare("SELECT COUNT(*) FROM generation_jobs WHERE project_id=:p AND status='RUNNING'");
-        $runningQuery->execute(['p' => $projectId]);
-        $running = (int) $runningQuery->fetchColumn();
-        if (is_string($oldest) && $running === 0) {
-            $other = $db->prepare(
-                "SELECT p.title, COUNT(*) n FROM generation_jobs g JOIN projects p ON p.id=g.project_id
-                 WHERE g.project_id<>:p AND (g.status='RUNNING' OR (g.status='QUEUED' AND g.requested_at < :oldest)) GROUP BY p.id ORDER BY p.title"
-            );
-            $other->execute(['p' => $projectId, 'oldest' => $oldest]);
-            foreach ($other->fetchAll() as $o) { $ahead += (int) $o['n']; $aheadBooks[] = (string) $o['title']; }
+        if ($projectId !== null) {
+            $mine = $db->prepare("SELECT MIN(requested_at) FROM generation_jobs WHERE project_id=:p AND status='QUEUED'");
+            $mine->execute(['p' => $projectId]);
+            $oldest = $mine->fetchColumn();
+            $runningQuery = $db->prepare("SELECT COUNT(*) FROM generation_jobs WHERE project_id=:p AND status='RUNNING'");
+            $runningQuery->execute(['p' => $projectId]);
+            if (is_string($oldest) && (int) $runningQuery->fetchColumn() === 0) {
+                $other = $db->prepare(
+                    "SELECT p.title, COUNT(*) n FROM generation_jobs g JOIN projects p ON p.id=g.project_id
+                     WHERE g.project_id<>:p AND (g.status='RUNNING' OR (g.status='QUEUED' AND g.requested_at < :oldest)) GROUP BY p.id ORDER BY p.title"
+                );
+                $other->execute(['p' => $projectId, 'oldest' => $oldest]);
+                foreach ($other->fetchAll() as $o) { $ahead += (int) $o['n']; $aheadBooks[] = (string) $o['title']; }
+            }
         }
 
         $active = count(array_filter($items, static fn (array $i): bool => in_array($i['status'], ['QUEUED', 'RUNNING'], true)));
