@@ -78,7 +78,7 @@ final class TextCheckService
     {
         switch ($kind) {
             case 'proper':
-                foreach (self::matches('/(?<![\p{L}\p{N}_\'])\p{Lu}[\p{L}]*(?:[\'-][\p{L}]+)*(?![\p{L}\p{N}_])/u', $p) as [$word, $at]) {
+                foreach (self::matches('/' . PronunciationService::WORD_BEFORE . '\p{Lu}[\p{L}]*(?:[\'-][\p{L}]+)*(?![\p{L}\p{N}_])/u', $p) as [$word, $at]) {
                     $base = preg_replace('/\'s$/i', '', $word) ?? $word;
                     if (mb_strlen($base) < 2 || preg_match('/^\p{Lu}+$/u', $base)) continue;                  // ALL-CAPS words have their own list
                     $before = rtrim(substr($p, 0, $at), " \t\"'(\u{201C}\u{2014}-[");

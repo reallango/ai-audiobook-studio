@@ -42,7 +42,8 @@ final class Segmenter
     /** @return string[] sentences, with abbreviations and initials kept inside their sentence */
     public static function sentences(string $paragraph): array
     {
-        $raw = preg_split('/(?<=[.!?\x{2026}])(?:["\'\x{201D}\x{2019})\]]*)\s+(?=["\'\x{201C}\x{2018}(\[]?[\p{Lu}\p{N}])/u', $paragraph) ?: [$paragraph];
+        // split after . ! ? or … and any closing quotes or brackets (kept with their sentence), before a capital or digit
+        $raw = preg_split('/(?:(?<=[.!?\x{2026}])|(?<=[.!?\x{2026}]["\'\x{201D}\x{2019})\]])|(?<=[.!?\x{2026}]["\'\x{201D}\x{2019})\]]{2}))\s+(?=["\'\x{201C}\x{2018}(\[]?[\p{Lu}\p{N}])/u', $paragraph) ?: [$paragraph];
         $out = [];
         foreach ($raw as $piece) {
             if ($out !== [] && self::endsWithAbbreviation($out[array_key_last($out)])) {

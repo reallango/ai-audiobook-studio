@@ -242,8 +242,13 @@ $explain = [
       <?php if ($testResult['hits']): ?>
         <h3>Rules that fired</h3>
         <ul>
-          <?php foreach ($testResult['hits'] as $pattern => $count): $rule = $testResult['effective'][mb_strtolower((string) $pattern)] ?? null; ?>
-            <li><code><?= e((string) $pattern) ?></code> → <code><?= e((string) ($rule['replacement'] ?? '')) ?></code> × <?= (int) $count ?> <small>from <?= e((string) ($rule['layer_label'] ?? '')) ?></small></li>
+          <?php foreach ($testResult['hits'] as $pattern => $count):
+              $pattern = (string) $pattern;
+              $rule = null;
+              foreach ($testResult['effective'] as $candidate) if ((string) $candidate['pattern'] === $pattern) { $rule = $candidate; break; }
+              $isCaps = str_starts_with($pattern, '[caps] ');
+              $word = $isCaps ? substr($pattern, 7) : $pattern; ?>
+            <li><code><?= e($word) ?></code> → <code><?= e($isCaps ? (string) (PronunciationService::normalCase($word) ?? $word) : (string) ($rule['replacement'] ?? '')) ?></code> × <?= (int) $count ?> <small>from <?= e($isCaps ? 'ALL-CAPS words read as words' : (string) ($rule['layer_label'] ?? '')) ?></small></li>
           <?php endforeach; ?>
         </ul>
       <?php else: ?><p>No rules matched.</p><?php endif; ?>

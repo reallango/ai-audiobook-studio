@@ -133,7 +133,7 @@
     button.disabled = true;
     status.textContent = 'Generating…';
     try {
-      const temp = withChange && written.value.trim() ? [{pattern: written.value.trim(), replacement: spoken.value, case_sensitive: !!caseFlag, ...(matchMode === 'regex' ? {match_type: 'regex'} : {})}] : [];
+      const temp = withChange && written.value.trim() ? [{pattern: written.value.trim(), replacement: spoken.value, case_sensitive: !!caseFlag, match_type: matchMode === 'regex' ? 'regex' : (whole && !whole.checked ? 'anywhere' : 'word')}] : [];
       const result = await speak({text: text.value, voice: wb.dataset.voice, speed: Number(wb.dataset.speed), token: wb.dataset.token, url: wb.dataset.preview, rules: withChange, project: wb.dataset.project, setId: wb.dataset.set, temp});
       if (audio.dataset.url) URL.revokeObjectURL(audio.dataset.url);
       audio.dataset.url = URL.createObjectURL(result.blob);

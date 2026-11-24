@@ -92,7 +92,7 @@ final class NarrationService
         // The chapter title is announced first, unless the EPUB already opens with that same heading.
         $title = trim((string) $section['title']);
         $announce = $title !== '' && !(isset($paragraphs[0]) && self::sameTitle($paragraphs[0], $title));
-        $text = ($announce ? $title . '.' . "\n\n" : '') . implode("\n\n", $paragraphs);
+        $text = ($announce ? $title . (preg_match('/[.!?:;\x{2026}]$/u', $title) === 1 ? '' : '.') . "\n\n" : '') . implode("\n\n", $paragraphs);
         $hash = hash('sha256', $text);
         $approval = $this->approval($logicalId);
         $status = $approval === null ? 'unreviewed' : ($approval['narration_sha256'] === $hash ? 'approved' : 'changed');
@@ -196,7 +196,7 @@ final class NarrationService
             $word = trim(str_replace(["\u{2019}", "\u{2018}"], "'", $word));
             if ($word === '' || mb_strlen($word) > 100) return [];
             $body = preg_quote($word, '/');
-            $pattern = '/' . ($wholeWord ? '(?<![\p{L}\p{N}_\'])' . $body . '(?:\'[sS])?(?![\p{L}\p{N}_\'])' : $body) . '/u' . ($caseSensitive ? '' : 'i');
+            $pattern = '/' . ($wholeWord ? PronunciationService::WORD_BEFORE . $body . '(?:\'[sS])?' . PronunciationService::WORD_AFTER : $body) . '/u' . ($caseSensitive ? '' : 'i');
         }
         $ids = $projectId !== null && $projectId !== '' ? [$projectId] : array_slice(array_column((new ProjectRepository())->all(false), 'id'), 0, 5);
         $found = [];

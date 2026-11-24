@@ -74,6 +74,8 @@ file_put_contents("$dir/rate.wav", 'RIFF' . pack('V', 38) . 'WAVEfmt ' . pack('V
 try { WavFile::join([['path' => "$dir/c.wav", 'gap_ms' => 0], ['path' => "$dir/rate.wav", 'gap_ms' => 0]], "$dir/bad.wav"); $r2 = 'joined'; } catch (RuntimeException $e) { $r2 = 'rejected'; }
 check('different formats are refused', $r2, 'rejected');
 
+check('sentences keep their closing quotes and brackets', Segmenter::sentences('He said "Stop." Then she asked (why?) And he left.'), ['He said "Stop."', 'Then she asked (why?)', 'And he left.']);
+
 array_map('unlink', glob("$dir/*"));
 rmdir($dir);
 echo $failures === 0 ? "\nall passed\n" : "\n$failures failed\n";

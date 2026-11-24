@@ -86,13 +86,13 @@
     }
   });
 
-  generate.addEventListener('click', () => start());
+  if (generate) generate.addEventListener('click', () => start());
   if (retry) retry.addEventListener('click', () => start(() => call('reset', {segment_id: ''})));
   const regenerate = panel.querySelector('[data-regenerate]');
   if (regenerate) regenerate.addEventListener('click', () => {
     if (confirm('Throw away all audio for this chapter and generate it again?')) start(() => call('reset_all'));
   });
-  cancel.addEventListener('click', async () => {
+  if (cancel) cancel.addEventListener('click', async () => {
     cancel.disabled = true;
     try { await call('cancel'); } catch (error) { status.textContent = error.message; }
   });

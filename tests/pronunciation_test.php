@@ -171,6 +171,24 @@ check('a pattern rule is tried after plain text rules until arranged', array_col
 $svc->move($rxId, 'top');
 check('an arranged pattern rule can go first', $applyOrd('Deep Space'), 'rx Space');
 
+// review fixes: quotes, Roman numerals, capitals-only differences, possessives, unsafe patterns, \$
+$fresh = static fn (array $rules): array => $svc->withTemporary([], $rules);
+check('a word right after an opening single quote or before a closing one is still a word',
+    $svc->apply("\u{2018}Bajor is home,\u{2019} he said. Bajor\u{2019}", $fresh([['pattern' => 'Bajor', 'replacement' => 'Bay-jor']]))['text'], "'Bay-jor is home,' he said. Bay-jor'");
+check('an ALL-CAPS word in single quotes is normalised', $svc->apply("\u{2018}STARBASE\u{2019} and O'BRIEN", [])['text'], "'Starbase' and O'brien");
+check('a contraction after a word is not a quote', $svc->apply("Bajor'd", $fresh([['pattern' => 'Bajor', 'replacement' => 'X']]))['text'], "Bajor'd");
+check('ordinary words made of numeral letters are not Roman numerals', $svc->apply('I DID IT, CIVIL WAR, MILD, chapter XII', [])['text'], 'I Did It, Civil War, Mild, chapter XII');
+$casePair = $fresh([['pattern' => 'US', 'replacement' => 'United States', 'case_sensitive' => 1], ['pattern' => 'us', 'replacement' => 'uhs', 'case_sensitive' => 1]]);
+check('two rules that differ only in capitals both apply', $svc->apply('The US and us', $casePair)['text'], 'The United States and uhs');
+$poss = $fresh([['pattern' => "Bajor's", 'replacement' => 'X', 'case_sensitive' => 1], ['pattern' => 'Bajor', 'replacement' => 'Bay-jor']]);
+check('a possessive uses the rule that actually matched', $svc->apply("BAJOR'S and Bajor's", $poss)['text'], "Bay-jor's and X");
+check('named groups and back-references are refused with a reason', [str_contains((string) PronunciationService::validateRegex('(?<n>\d+)x'), 'named groups'), str_contains((string) PronunciationService::validateRegex('(o)\1'), 'back-references')], [true, true]);
+check('zero-width patterns are refused', [str_contains((string) PronunciationService::validateRegex('\b'), 'zero characters'), str_contains((string) PronunciationService::validateRegex('(?=Bajor)'), 'zero characters')], [true, true]);
+check('a case-sensitive catastrophic pattern is refused', str_contains((string) PronunciationService::validateRegex('(A+)+B', true), 'too complex'), true);
+check('an escaped backslash before a slash does not break the other pattern rules',
+    $svc->apply('a\/b and Dr. Who', $fresh([['pattern' => 'a\\\\/b', 'replacement' => 'AB', 'match_type' => 'regex'], ['pattern' => 'Dr\.', 'replacement' => 'Doctor', 'match_type' => 'regex']]))['text'], 'AB and Doctor Who');
+check('\$ in a spoken form is a dollar sign', $svc->apply('costs 5', $fresh([['pattern' => 'costs (\d+)', 'replacement' => 'costs \$$1', 'match_type' => 'regex']]))['text'], 'costs $5');
+
 // editing a rule in place
 $svc->save('set', 'ord', '(\d{2})(\d{2})', '$1-$2', false, true, 'split', 'regex');
 $editRule = array_values(array_filter($svc->rules('set', 'ord'), static fn (array $r): bool => $r['pattern'] === '(\d{2})(\d{2})'))[0];

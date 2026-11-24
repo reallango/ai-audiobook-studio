@@ -193,5 +193,5 @@ $renderPieces = static function (array $item): string {
       require APP_ROOT . '/app/Views/workbench.php';
   endif; ?>
 </div>
-<?php if ($focus !== ''): ?><script>document.getElementById('b-<?= e($focus) ?>')?.scrollIntoView({block: 'center'});</script><?php endif; ?>
+<?php if ($focus !== ''): ?><script>document.getElementById(<?= json_encode('b-' . $focus, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>)?.scrollIntoView({block: 'center'});</script><?php endif; ?>
 <?php require APP_ROOT . '/app/Views/layout-bottom.php'; ?>

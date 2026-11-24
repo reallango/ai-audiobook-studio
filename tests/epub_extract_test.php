@@ -30,6 +30,10 @@ check('double line breaks split paragraphs in loose text', array_slice($texts("<
 check('a short page of real paragraphs is not touched', $texts('<p>Short.</p><div>Tiny.</div>'), ['Short.']);
 check('well-formed pages keep their paragraphs even when other text exists', count($texts("<p>$long</p><p>$long</p><div>x</div>")), 2);
 
+check('paragraphs inside a blockquote are read once each', $texts('<blockquote><p>Quoted one.</p><p>Quoted two.</p></blockquote><p>After.</p>'), ['Quoted one.', 'Quoted two.', 'After.']);
+check('a list item with its own paragraph is read once', $texts('<ul><li><p>Item text.</p></li><li>Plain item.</li></ul>'), ['Item text.', 'Plain item.']);
+check('text directly in a blockquote beside its paragraphs is kept', $texts('<blockquote>Lead line. <p>Inner para.</p></blockquote>'), ['Lead line.', 'Inner para.']);
+
 @unlink($db);
 echo $failures === 0 ? "\nall passed\n" : "\n$failures failed\n";
 exit($failures === 0 ? 0 : 1);

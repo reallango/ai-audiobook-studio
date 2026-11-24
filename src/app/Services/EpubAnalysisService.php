@@ -71,7 +71,22 @@ final class EpubAnalysisService
                 '//*[local-name()="h1" or local-name()="h2" or local-name()="h3" or local-name()="h4" or local-name()="h5" or local-name()="h6" or local-name()="p" or local-name()="li" or local-name()="blockquote"]'
             ) ?: [] as $node
         ) {
-            $text = preg_replace('/\s+/u', ' ', trim($node->textContent)) ?? '';
+            // A blockquote or list item that holds its own paragraphs is read through those paragraphs, not a second
+            // time as one glued-together block; only text sitting directly in it (outside the inner blocks) is kept.
+            $inner = $xp->query('.//*[local-name()="h1" or local-name()="h2" or local-name()="h3" or local-name()="h4" or local-name()="h5" or local-name()="h6" or local-name()="p" or local-name()="li" or local-name()="blockquote"]', $node);
+            if ($inner !== false && $inner->length > 0) {
+                $own = '';
+                foreach ($xp->query('.//text()', $node) ?: [] as $textNode) {
+                    $inBlock = false;
+                    for ($up = $textNode->parentNode; $up !== null && $up !== $node; $up = $up->parentNode) {
+                        if ($up instanceof DOMElement && in_array(strtolower($up->localName), ['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'p', 'li', 'blockquote'], true)) { $inBlock = true; break; }
+                    }
+                    if (!$inBlock) $own .= ' ' . $textNode->nodeValue;
+                }
+                $text = preg_replace('/\s+/u', ' ', trim($own)) ?? '';
+            } else {
+                $text = preg_replace('/\s+/u', ' ', trim($node->textContent)) ?? '';
+            }
             if ($text !== '') {
                 $blocks[] = [
                     'type' => strtolower($node->localName),

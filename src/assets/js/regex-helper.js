@@ -101,7 +101,7 @@
     const pattern = (startOnly ? '^' : '') + (edges ? EDGE_BEFORE : '') + pieces.join('') + (edges ? EDGE_AFTER : '');
     const caps = captureNumbers();
     const spoken = out.map(o => {
-      if (o.t === 'text') return o.v || '';
+      if (o.t === 'text') return (o.v || '').replace(/\$/g, '\\$');
       const max = Math.max(...caps, 0);
       const n = Math.min(Math.max(1, parseInt(o.n, 10) || 1), Math.max(max, 1));
       return o.x ? '${' + n + ':' + o.x + '}' : '$' + n;
