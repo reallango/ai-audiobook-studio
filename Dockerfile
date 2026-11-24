@@ -14,6 +14,8 @@ ENV WEB_DOCUMENT_ROOT=/app \
 COPY src/ /app/
 # Background generation worker, started and restarted by the image's supervisord.
 COPY docker/worker.conf /opt/docker/etc/supervisor.d/audiobook-worker.conf
+# Only the app's public entry points are served; storage, code and migrations are not.
+COPY docker/nginx-deny.conf /opt/docker/etc/nginx/vhost.common.d/05-deny.conf
 
 RUN mkdir -p /app/storage/projects /app/storage/cache /app/storage/logs \
              /app/storage/tmp /app/storage/backups /app/storage/locks \

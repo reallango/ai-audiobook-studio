@@ -1,0 +1,14 @@
+# Keep runtime data and private material out of the image.
+.git
+.github
+reference/
+kokoro-scripts/
+.env
+*.md
+!src/README.md
+src/storage/**
+!src/storage/**/.gitkeep
+*.wav
+*.epub
+*.sqlite*
+tests/
