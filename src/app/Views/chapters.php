@@ -38,6 +38,13 @@ $totalMs = array_sum(array_map(static fn (array $a): int => (int) ($a['duration_
     <div class="stat"><b><?= $totalMs > 0 ? e($mmss($totalMs)) : '0:00' ?></b><span>audio so far</span></div>
     <div class="stat"><b><?= number_format($words) ?></b><span>words in the included chapters</span></div>
   </div>
+  <?php $unapproved = count(array_filter($rows, static fn (array $r): bool => $r['status'] !== 'approved' && (int) $r['words'] > 0)); ?>
+  <?php if ($unapproved > 0 && $project['status'] !== 'ARCHIVED'): ?>
+    <form method="post" class="chapters-generate" onsubmit="return confirm('Approve <?= (int) $unapproved ?> chapter<?= $unapproved === 1 ? '' : 's' ?> without reading them here? An approval only means the narration text is ready for audio. You can still open any chapter and unapprove it.');"><?= csrf_field() ?><input type="hidden" name="id" value="<?= e((string) $project['id']) ?>"><input type="hidden" name="action" value="approve_all">
+      <button type="submit" class="secondary">Approve all <?= $unapproved ?> unapproved chapter<?= $unapproved === 1 ? '' : 's' ?></button>
+      <span class="muted">Includes chapters changed since they were approved. Chapters with no text are left out.</span>
+    </form>
+  <?php endif; ?>
   <?php if ($approved > 0 && $project['status'] !== 'ARCHIVED'): ?>
     <form method="post" class="chapters-generate"><?= csrf_field() ?><input type="hidden" name="id" value="<?= e((string) $project['id']) ?>"><input type="hidden" name="action" value="generate_all">
       <button type="submit" <?= $todo === 0 ? 'disabled' : '' ?>>Generate audio for <?= $todo ?> approved chapter<?= $todo === 1 ? '' : 's' ?></button>

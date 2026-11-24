@@ -339,6 +339,19 @@ final class App
                     self::flash('success', 'Audiobook file built with ' . (int) $built['chapter_count'] . ' chapter markers.');
                     self::redirect('chapters', ['id' => $projectId]);
                 }
+                if ($action === 'approve_all') {
+                    // Approves every included chapter that is not approved for its current text (new, or changed since approval).
+                    $approvedNow = 0;
+                    $skipped = 0;
+                    foreach ($narration->overview($projectId) as $row) {
+                        if ($row['status'] === 'approved') continue;
+                        if ((int) $row['words'] === 0) { $skipped++; continue; }
+                        $narration->approve($projectId, (string) $row['id']);
+                        $approvedNow++;
+                    }
+                    self::flash('success', $approvedNow > 0 ? "Approved $approvedNow chapter" . ($approvedNow === 1 ? '' : 's') . ($skipped > 0 ? " ($skipped with no text left out)" : '') . '. Generate their audio when you are ready.' : 'Every chapter with text was already approved.');
+                    self::redirect('chapters', ['id' => $projectId]);
+                }
                 if ($action !== 'generate_all') throw new \InvalidArgumentException('Unknown action.');
                 $overview = $narration->overview($projectId);
                 $states = (new GenerationService())->summaries($projectId, $overview);
