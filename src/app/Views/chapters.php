@@ -56,9 +56,12 @@ $totalMs = array_sum(array_map(static fn (array $a): int => (int) ($a['duration_
   <section class="export-panel" id="export">
     <h2>Audiobook files</h2>
     <p class="muted">Each chapter is AAC mono at <b><?= (int) $project['audio_bitrate_kbps'] ?> kbps</b> (change it in the project settings). <?= (int) $readyCount ?> of <?= count($rows) ?> chapters have finished audio. The m4b joins the finished chapters, in order, with a chapter marker for each.</p>
+    <?php $m4bBusy = (new \App\Services\TaskService())->isBusy((string) $project['id']); ?>
     <?php $m4bUrl = base_url('export', ['id' => $project['id'], 'kind' => 'm4b']); $build = static fn (string $label, string $class = ''): string => '<form method="post" class="inline-form">' . csrf_field() . '<input type="hidden" name="id" value="' . e((string) $project['id']) . '"><input type="hidden" name="action" value="build_m4b"><button type="submit"' . ($class !== '' ? ' class="' . $class . '"' : '') . '>' . $label . '</button></form>'; ?>
     <div class="export-actions">
-      <?php if (!$exportRow): ?>
+      <?php if ($m4bBusy): ?>
+        <button type="button" disabled>Building the M4B&hellip; see the activity bar</button>
+      <?php elseif (!$exportRow): ?>
         <?= $build('Build the chaptered M4B') ?>
       <?php elseif ($exportCurrent): ?>
         <a class="button" href="<?= e($m4bUrl) ?>">Download the chaptered M4B</a>

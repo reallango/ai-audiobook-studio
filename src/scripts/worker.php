@@ -6,6 +6,7 @@ declare(strict_types=1);
 require dirname(__DIR__) . '/app/bootstrap.php';
 
 use App\Services\JobService;
+use App\Services\TaskService;
 
 if (PHP_SAPI !== 'cli') exit(1);
 
@@ -16,6 +17,8 @@ if (function_exists('pcntl_async_signals')) {
 }
 
 $jobs = new JobService();
+$tasks = new TaskService();
+$tasks->recover();
 $recovered = $jobs->recover();
 fwrite(STDOUT, '[worker] started' . ($recovered ? ", $recovered segment(s) made available again" : '') . "\n");
 
@@ -27,6 +30,13 @@ while (!$stop) {
             $idle = 0;
             continue;
         }
+    } catch (Throwable $error) {
+        fwrite(STDERR, '[worker] ' . $error->getMessage() . "\n");
+        sleep(5);
+        continue;
+    }
+    try {
+        if ($tasks->runNext()) { $idle = 0; continue; }      // after the chapter jobs: building the M4B
     } catch (Throwable $error) {
         fwrite(STDERR, '[worker] ' . $error->getMessage() . "\n");
         sleep(5);

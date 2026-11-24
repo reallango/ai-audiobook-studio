@@ -306,3 +306,21 @@ mark.chg:hover, mark.chg:focus-visible { filter: brightness(1.25); outline: none
 .preview-actions .inline-form, .rename-row .inline-form { margin: 0; }
 .rename-row { display: flex; flex-wrap: wrap; gap: .6rem; align-items: end; }
 .rename-row label { flex: 1 1 18rem; }
+
+/* Activity bar */
+.activity { margin-top: .6rem; border: 1px solid var(--line, #2a3a52); border-radius: 10px; background: var(--panel, #0f1b2d); }
+.activity.busy { border-color: #3b82f6; }
+.activity.has-failed:not(.busy) { border-color: #d95062; }
+.act-head { display: flex; gap: .8rem; align-items: center; width: 100%; padding: .55rem .9rem; background: none; border: 0; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.act-title { font-weight: 700; }
+.act-summary { flex: 1; color: var(--muted, #9db0c9); }
+.act-toggle { font-size: .85em; color: var(--muted, #9db0c9); }
+.act-warn { margin: 0; padding: 0 .9rem .5rem; color: #e0a43c; font-size: .9em; }
+.act-list { list-style: none; margin: 0; padding: 0 .9rem .6rem; display: grid; gap: .3rem; max-height: 16rem; overflow-y: auto; }
+.act-item { display: flex; flex-wrap: wrap; gap: .6rem; align-items: center; font-size: .92em; }
+.act-state { min-width: 4.5rem; font-size: .8em; text-transform: uppercase; letter-spacing: .05em; color: var(--muted, #9db0c9); }
+.act-running .act-state { color: #5aa2ff; }
+.act-done .act-state { color: #3fb56b; }
+.act-failed .act-state { color: #ef6b7b; }
+.act-item progress { width: 8rem; height: .6rem; }
+.act-msg { color: var(--muted, #9db0c9); }

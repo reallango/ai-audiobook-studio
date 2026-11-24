@@ -23,7 +23,7 @@ final class App
     public static function run(): void
     {
         $route=trim((string)($_GET['page']??'projects'),'/');
-        try{match($route){'api-health'=>self::json(self::health()),'diagnostics'=>self::view('diagnostics'),'projects','home',''=>self::projects(),'project-create'=>self::createProject(),'project'=>self::project(),'epub-upload'=>self::epubUpload(),'epub-analyze'=>self::epubAnalyze(),'source-sections'=>self::sourceSections(),'source-section'=>self::sourceSection(),'project-archive'=>self::archiveProject(),'project-restore'=>self::restoreProject(),'project-delete'=>self::deleteProject(),'voice-lab'=>self::voiceLab(),'voice-preview'=>self::voicePreview(),'pronunciation'=>self::pronunciation(),'rulesets'=>self::pronunciation(),'pronunciation-rule'=>self::pronunciationRule(),'pronunciation-example'=>self::pronunciationExample(),'rulesets-regex'=>self::regexPreview(),'textchecks'=>self::textChecks(),'section-preview'=>self::sectionPreview(),'chapters'=>self::chapters(),'chapter-review'=>self::chapterReview(),'chapter-audio'=>self::chapterAudio(),'chapter-text'=>self::chapterText(),'audio'=>self::audio(),'export'=>self::export(),default=>self::notFound()};}
+        try{match($route){'api-health'=>self::json(self::health()),'diagnostics'=>self::view('diagnostics'),'projects','home',''=>self::projects(),'project-create'=>self::createProject(),'project'=>self::project(),'epub-upload'=>self::epubUpload(),'epub-analyze'=>self::epubAnalyze(),'source-sections'=>self::sourceSections(),'source-section'=>self::sourceSection(),'project-archive'=>self::archiveProject(),'project-restore'=>self::restoreProject(),'project-delete'=>self::deleteProject(),'voice-lab'=>self::voiceLab(),'voice-preview'=>self::voicePreview(),'pronunciation'=>self::pronunciation(),'rulesets'=>self::pronunciation(),'pronunciation-rule'=>self::pronunciationRule(),'pronunciation-example'=>self::pronunciationExample(),'rulesets-regex'=>self::regexPreview(),'textchecks'=>self::textChecks(),'activity'=>self::activity(),'section-preview'=>self::sectionPreview(),'chapters'=>self::chapters(),'chapter-review'=>self::chapterReview(),'chapter-audio'=>self::chapterAudio(),'chapter-text'=>self::chapterText(),'audio'=>self::audio(),'export'=>self::export(),default=>self::notFound()};}
         catch(Throwable $error){error_log($error->__toString());http_response_code(500);self::view('error',['message'=>config('app.debug',false)?$error->getMessage():'The request could not be completed. Check the application log for details.']);}
     }
     private static function voiceLab():void
@@ -213,6 +213,14 @@ final class App
         self::view('section-preview', ['project' => $project, 'section' => $all[$at], 'blocks' => $repo->blocks($id), 'prev' => $prev, 'next' => $next, 'number' => $at + 1, 'total' => count($all)]);
     }
 
+    /** GET ?page=activity&id=PROJECT -> JSON {worker, active, items[]}: the background work for a project, for the activity bar. */
+    private static function activity():void
+    {
+        $id = (string) ($_GET['id'] ?? '');
+        if ($id === '' || !(new ProjectRepository())->find($id)) { self::json(['ok' => false, 'message' => 'Project not found.'], 404); return; }
+        self::json(['ok' => true] + (new \App\Services\TaskService())->activity($id));
+    }
+
     /** GET ?page=textchecks&id=PROJECT&kind=proper|number|... : things in the book a voice may read badly, to turn into rules. */
     private static function textChecks():void
     {
@@ -333,10 +341,8 @@ final class App
                 if ($project['status'] === 'ARCHIVED') throw new \InvalidArgumentException('Restore the project before generating audio.');
                 $action = (string) ($_POST['action'] ?? '');
                 if ($action === 'build_m4b') {
-                    set_time_limit(0);
-                    session_write_close();
-                    $built = (new ExportService())->buildM4b($projectId);
-                    self::flash('success', 'Audiobook file built with ' . (int) $built['chapter_count'] . ' chapter markers.');
+                    (new \App\Services\TaskService())->enqueue($projectId, 'm4b');
+                    self::flash('success', 'Building the chaptered M4B in the background. Watch the activity bar at the top of the page; the download appears here when it is done.');
                     self::redirect('chapters', ['id' => $projectId]);
                 }
                 if ($action === 'approve_all') {
