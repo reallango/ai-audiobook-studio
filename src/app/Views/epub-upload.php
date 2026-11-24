@@ -1,40 +1,25 @@
 <?php
 declare(strict_types=1);
-$pageTitle = 'Import EPUB';
+
+/* Add the EPUB to a book created without one. Expects $project, $errorMessage. */
+$pageTitle = 'Add the EPUB · ' . $project['title'];
+$layout = 'bare';
 require APP_ROOT . '/app/Views/layout-top.php';
 ?>
-
-<section class="page-head">
-  <div>
-    <p class="eyebrow">PHASE 2A · IMMUTABLE SOURCE</p>
-    <h1>Import EPUB</h1>
-    <p class="lead compact">This milestone validates and stores the original EPUB. Metadata and reading-order analysis will follow in Phase 2B.</p>
+<div class="page" style="max-width: 720px">
+  <div class="page-head">
+    <div>
+      <h1>Add the EPUB</h1>
+      <p>The file is checked and kept as it is. Once it is added, this book always uses it; for a different edition, start a new audiobook.</p>
+    </div>
   </div>
-</section>
-<section class="form-panel">
-  <?php if ($errorMessage): ?>
-    <div class="error-list"><strong>Upload failed:</strong> <?= e($errorMessage) ?></div>
-  <?php endif; ?>
-  <form method="post" enctype="multipart/form-data" action="<?= e(base_url('epub-upload', ['id' => $project['id']])) ?>">
+  <?php if ($errorMessage): ?><p class="flash error" style="margin: 0 0 16px"><strong>The upload did not work:</strong> <?= e($errorMessage) ?></p><?php endif; ?>
+  <form class="card" method="post" enctype="multipart/form-data" action="<?= e(base_url('epub-upload', ['id' => $project['id']])) ?>" style="display: grid; gap: 16px">
     <?= csrf_field() ?>
     <input type="hidden" name="MAX_FILE_SIZE" value="536870912">
-    <label>EPUB file
-      <input type="file" name="epub" accept=".epub,application/epub+zip" required>
-    </label>
-    <div class="source-warning">
-      <strong>Original-source policy</strong>
-      <span>After a successful upload, this project will not replace the stored EPUB. Create a new project for a different edition or corrected source file.</span>
-    </div>
-    <ul class="upload-checks">
-      <li>Maximum application size: 512 MB, subject to lower PHP or Nginx limits.</li>
-      <li>ZIP archive and EPUB container structure are validated.</li>
-      <li>Unsafe archive paths are rejected.</li>
-      <li>A SHA-256 checksum and source manifest are created.</li>
-    </ul>
-    <div class="form-actions">
-      <a class="button secondary" href="<?= e(base_url('project', ['id' => $project['id']])) ?>">Cancel</a>
-      <button type="submit">Upload immutable EPUB</button>
-    </div>
+    <label style="display: grid; gap: 6px; font-weight: 600; font-size: 14px">EPUB file <input type="file" name="epub" accept=".epub,application/epub+zip" required></label>
+    <p class="quiet" style="margin: 0">Up to 512 MB (the server may allow less; see Diagnostics). The file is checked to be a real EPUB with safe paths, and a checksum is kept.</p>
+    <div style="display: flex; gap: 8px; justify-content: flex-end"><a class="btn btn-outline" href="<?= e(base_url('project', ['id' => $project['id']])) ?>">Cancel</a><button type="submit">Add the EPUB</button></div>
   </form>
-</section>
+</div>
 <?php require APP_ROOT . '/app/Views/layout-bottom.php'; ?>

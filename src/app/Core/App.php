@@ -48,8 +48,9 @@ final class App
         $projects = (new ProjectRepository())->all(false);
         $sets = $svc->sets();
 
-        $layer = (string) ($_GET['layer'] ?? $_POST['layer'] ?? 'default');
-        if (!isset($layers[$layer])) $layer = 'default';
+        // Shared rulesets opens on the rulesets themselves; the per-book layer lives on each book's Pronunciation page
+        $layer = (string) ($_GET['layer'] ?? $_POST['layer'] ?? 'set');
+        if (!isset($layers[$layer])) $layer = 'set';
         $ref = (string) ($_GET['ref'] ?? $_POST['ref'] ?? '');
         if ($layer === 'default') $ref = '';
         if ($layer === 'voice' && !KokoroClient::validVoice($ref)) $ref = VoiceCatalog::DEFAULT_VOICE;

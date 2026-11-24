@@ -1,2 +1,16 @@
-<?php declare(strict_types=1); ?>
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Not Found</title><link rel="stylesheet" href="<?= e(base_url('assets/css/app.css')) ?>"></head><body><main class="container narrow"><p class="eyebrow">404</p><h1>Page not found</h1><p>The requested AI Audiobook Studio page does not exist.</p><a class="button secondary" href="<?= e(base_url()) ?>">Return home</a></main></body></html>
+<?php
+declare(strict_types=1);
+
+/* Not found: the same shell as every page, so the way back is the usual one. */
+$pageTitle = 'Not found';
+$layout = 'bare';
+require APP_ROOT . '/app/Views/layout-top.php';
+?>
+<div class="page" style="max-width: 640px; text-align: center; padding-top: 64px">
+  <div class="card" style="display: grid; gap: 12px; justify-items: center; padding: 32px">
+    <h1>That page isn't here</h1>
+    <p class="muted" style="margin: 0">The link may be old, or the book or chapter was removed.</p>
+    <a class="btn" href="<?= e(base_url()) ?>">Go to the Library</a>
+  </div>
+</div>
+<?php require APP_ROOT . '/app/Views/layout-bottom.php'; ?>

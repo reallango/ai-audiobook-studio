@@ -69,6 +69,22 @@ $st = $render(['page' => 'project', 'id' => 'p']);
 check('Settings renders the reading settings and the archive section', [$ok($st), str_contains($st, 'id="project-settings"'), str_contains($st, 'Archive this book')], [true, true, true]);
 check('every book page has the stage bar and the activity button', [str_contains($arr, 'aria-label="Book"'), str_contains($ex, 'id="activity"')], [true, true]);
 check('the global pages still render', [$ok($render(['page' => 'voice-lab'])), $ok($render(['page' => 'rulesets', 'layer' => 'default'])), $ok($render(['page' => 'diagnostics']))], [true, true, true]);
+$pdo->exec("INSERT INTO pronunciation_sets(id,name) VALUES('st','Series rules')");
+(new PronunciationService())->save('set', 'st', 'Kira', 'Keera');
+(new PronunciationService())->attachSet('p', 'st');
+$sr = $render(['page' => 'rulesets']);
+check('Shared rulesets opens on the rulesets, with the rule and the books that use it', [$ok($sr), str_contains($sr, '<strong>Kira</strong>'), str_contains($sr, 'Used by'), str_contains($sr, 'Test Book')], [true, true, true, true]);
+$vr = $render(['page' => 'rulesets', 'layer' => 'voice', 'ref' => 'am_michael']);
+check('the voice tab renders with a voice picker', [$ok($vr), str_contains($vr, 'id="voice-pick"')], [true, true]);
+$vl = $render(['page' => 'voice-lab']);
+check('Voices keeps the hooks its script needs', [str_contains($vl, 'class="voice-lab"'), substr_count($vl, 'data-take='), str_contains($vl, 'data-generate-both')], [true, 2, true]);
+check('Diagnostics lists the workers and the voice server', [str_contains($render(['page' => 'diagnostics']), 'Audio worker'), str_contains($render(['page' => 'diagnostics']), 'Voice server')], [true, true]);
+$nf = $render(['page' => 'no-such-page']);
+check('an unknown page shows the not-found page in the normal shell', [str_contains($nf, "That page isn't here"), str_contains($nf, 'app-top')], [true, true]);
+$pc = $render(['page' => 'project-create']);
+check('New audiobook renders', [$ok($pc), str_contains($pc, 'name="title"')], [true, true]);
+$st2 = $render(['page' => 'project', 'id' => 'p']);
+check('Settings has the spoken title card with the standard text', [str_contains($st2, 'Spoken title'), str_contains($st2, 'Test Book, by An Author.'), str_contains($st2, 'personal use only')], [true, true, true]);
 
 function rrmdir(string $d): void { foreach (glob("$d/*") ?: [] as $f) is_dir($f) ? rrmdir($f) : @unlink($f); @rmdir($d); }
 rrmdir($tmp);

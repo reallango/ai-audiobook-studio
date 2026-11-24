@@ -110,7 +110,7 @@ require APP_ROOT . '/app/Views/layout-top.php';
       <h2 id="h-life">Archive or delete</h2>
       <?php if (!$archived): ?>
         <p class="muted">Archiving hides the book from the Library and stops changes. Nothing is deleted; you can restore it.</p>
-        <form method="post" action="<?= e(base_url('project-archive')) ?>"><?= csrf_field() ?><input type="hidden" name="id" value="<?= e($pid) ?>"><button class="btn-outline" type="submit">Archive this book</button></form>
+        <form method="post" action="<?= e(base_url('project-archive')) ?>" style="display: block"><?= csrf_field() ?><input type="hidden" name="id" value="<?= e($pid) ?>"><button class="btn-outline" type="submit">Archive this book</button></form>
       <?php else: ?>
         <p class="muted">This book is archived. Restore it to work on it, or delete it for good by typing its exact title.</p>
         <div style="display: flex; gap: 16px; flex-wrap: wrap; align-items: end">

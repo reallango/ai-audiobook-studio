@@ -400,3 +400,5 @@ input:not([type="checkbox"]):not([type="radio"]):not([type="file"]), select, tex
 /* the old activity bar's rules (ui.css) must not touch the new button and its list */
 .app-top .activity { margin: 0; border: 0; border-radius: 0; background: none; }
 .activity-pop .act-state { min-width: 0; text-transform: none; letter-spacing: 0; font-size: 13px; }
+/* older stylesheets made every form a grid, stretching single buttons; forms on the new pages lay themselves out */
+.app-main form:not([class]) { display: block; }

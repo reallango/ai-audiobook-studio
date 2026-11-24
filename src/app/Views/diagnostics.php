@@ -1,71 +1,79 @@
 <?php
 declare(strict_types=1);
 
+/* Diagnostics: is everything the app needs in place. */
 $pageTitle = 'Diagnostics';
+$layout = 'bare';
 $health = \App\Core\App::health();
 $limits = $health['upload_limits'];
 $extensions = $health['required_extensions'];
 $allExtensions = !in_array(false, $extensions, true);
+$audioWorker = \App\Services\JobService::workerOnline();
+$buildWorker = \App\Services\TaskService::workerOnline();
+$voiceServer = trim((string) config('tts.kokoro_api_key', '')) !== '';
 require APP_ROOT . '/app/Views/layout-top.php';
+
+$checks = [
+    ['Storage', $health['storage_writable'], $health['storage_writable'] ? 'Writable' : 'Not writable'],
+    ['Database', $health['database_exists'], $health['database_exists'] ? 'Ready' : 'Missing'],
+    ['Reading EPUBs', $allExtensions, $allExtensions ? 'Ready' : 'A PHP extension is missing'],
+    ['Encoding audio', $health['ffmpeg_executable'] && $health['ffprobe_executable'], $health['ffmpeg_executable'] && $health['ffprobe_executable'] ? 'ffmpeg and ffprobe found' : 'ffmpeg or ffprobe missing'],
+    ['Voice server', $voiceServer, $voiceServer ? 'Set up' : 'No API key set'],
+    ['Audio worker', $audioWorker, $audioWorker ? 'Running' : 'Not seen recently'],
+    ['Build worker', $buildWorker, $buildWorker ? 'Running' : 'Not seen recently'],
+    ['Largest upload', $limits['effective_bytes'] !== null, (string) $limits['effective_display']],
+];
 ?>
-<section class="page-head diagnostic-heading">
-  <div>
-    <p class="eyebrow">SYSTEM CHECK</p>
-    <h1>Diagnostics</h1>
-    <p class="lead compact">A focused view of runtime readiness. Hover or focus the upload limit to see which configured layer is controlling it.</p>
-  </div>
-</section>
-
-<section class="diagnostic-cards">
-  <article class="diagnostic-card">
-    <span class="status <?= $health['storage_writable'] ? 'good' : 'bad' ?>"></span>
-    <div><small>Storage</small><strong><?= $health['storage_writable'] ? 'Writable' : 'Not writable' ?></strong></div>
-  </article>
-  <article class="diagnostic-card">
-    <span class="status <?= $health['database_exists'] ? 'good' : 'bad' ?>"></span>
-    <div><small>Database</small><strong><?= $health['database_exists'] ? 'Ready' : 'Missing' ?></strong></div>
-  </article>
-  <article class="diagnostic-card">
-    <span class="status <?= $allExtensions ? 'good' : 'bad' ?>"></span>
-    <div><small>EPUB extensions</small><strong><?= $allExtensions ? 'Ready' : 'Missing dependency' ?></strong></div>
-  </article>
-
-  <article class="diagnostic-card upload-limit-card" tabindex="0" aria-describedby="upload-limit-details">
-    <span class="status <?= $limits['effective_bytes'] !== null ? 'good' : 'warn' ?>"></span>
-    <div><small>Effective upload limit</small><strong><?= e($limits['effective_display']) ?></strong></div>
-    <span class="info-icon" aria-hidden="true">i</span>
-    <div class="limit-popover" id="upload-limit-details" role="tooltip">
-      <div class="popover-title">Configured upload limits</div>
-      <?php foreach ($limits['details'] as $limit): ?>
-        <div class="limit-row <?= $limit['limiting'] ? 'limiting' : '' ?>">
-          <span><?= e($limit['label']) ?></span>
-          <strong><?= e($limit['display']) ?></strong>
-          <?php if ($limit['limiting']): ?><em>Limiting</em><?php endif; ?>
-        </div>
-      <?php endforeach; ?>
-      <p>Nginx value source: <?= e($limits['nginx_detection']) ?>.</p>
+<div class="page" style="max-width: 980px">
+  <div class="page-head">
+    <div>
+      <h1>Diagnostics</h1>
+      <p>Whether everything the studio needs is in place on this server.</p>
     </div>
-  </article>
-</section>
+    <div class="page-actions"><a class="btn btn-outline" href="<?= e(base_url('api-health')) ?>">Full health report (JSON)</a></div>
+  </div>
 
-<section class="panel diagnostic-detail">
-  <h2>Runtime details</h2>
-  <dl class="diagnostics">
-    <div><dt>PHP</dt><dd><?= e($health['php']) ?></dd></div>
-    <div><dt>Application version</dt><dd><?= e($health['version']) ?></dd></div>
-    <div><dt>Portable FFmpeg</dt><dd><?= $health['ffmpeg_executable'] ? e($health['ffmpeg_version'] ?? 'Executable') : 'Not ready' ?></dd></div>
-    <div><dt>Portable FFprobe</dt><dd><?= $health['ffprobe_executable'] ? e($health['ffprobe_version'] ?? 'Executable') : 'Not ready' ?></dd></div>
-  </dl>
-</section>
-
-<details class="panel diagnostic-detail">
-  <summary>Required PHP extensions</summary>
-  <div class="extension-grid">
-    <?php foreach ($extensions as $name => $loaded): ?>
-      <div><span class="status <?= $loaded ? 'good' : 'bad' ?>"></span><strong><?= e($name) ?></strong><span><?= $loaded ? 'Loaded' : 'Missing' ?></span></div>
+  <div class="grid-cards" style="grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 14px">
+    <?php foreach ($checks as [$label, $ok, $text]): ?>
+      <div class="card" style="display: flex; gap: 12px; align-items: center; padding: 16px">
+        <span class="dot <?= $ok ? 'ok' : 'bad' ?>" aria-hidden="true"></span>
+        <div><div class="quiet"><?= e($label) ?></div><strong><?= e($text) ?></strong></div>
+      </div>
     <?php endforeach; ?>
   </div>
-</details>
 
-<p><a class="button secondary" href="<?= e(base_url('api-health')) ?>">View complete health JSON</a></p>
+  <section class="table-box" style="margin-top: 20px">
+    <h2 style="font-size: 16px; padding: 16px 16px 4px">Details</h2>
+    <table class="table">
+      <tbody>
+        <tr><td class="muted">PHP</td><td><?= e($health['php']) ?></td></tr>
+        <tr><td class="muted">App version</td><td><?= e($health['version']) ?></td></tr>
+        <tr><td class="muted">FFmpeg</td><td><?= $health['ffmpeg_executable'] ? e($health['ffmpeg_version'] ?? 'Found') : 'Not found' ?></td></tr>
+        <tr><td class="muted">FFprobe</td><td><?= $health['ffprobe_executable'] ? e($health['ffprobe_version'] ?? 'Found') : 'Not found' ?></td></tr>
+        <tr><td class="muted">Word list for name checks</td><td><?= \App\Services\TextCheckService::dictionary() !== null ? 'Installed' : 'Not installed' ?></td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section class="table-box" style="margin-top: 20px">
+    <h2 style="font-size: 16px; padding: 16px 16px 4px">Upload limits</h2>
+    <p class="quiet" style="padding: 0 16px; margin: 0">The smallest of these decides the largest EPUB that can be uploaded. Nginx value: <?= e((string) $limits['nginx_detection']) ?>.</p>
+    <table class="table">
+      <tbody>
+      <?php foreach ($limits['details'] as $limit): ?>
+        <tr><td class="muted"><?= e($limit['label']) ?></td><td><?= e($limit['display']) ?><?= $limit['limiting'] ? ' <span class="tag amber">the limit</span>' : '' ?></td></tr>
+      <?php endforeach; ?>
+      </tbody>
+    </table>
+  </section>
+
+  <details class="card" style="margin-top: 20px">
+    <summary style="cursor: pointer; font-weight: 600">PHP extensions</summary>
+    <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 8px; margin-top: 12px">
+      <?php foreach ($extensions as $name => $loaded): ?>
+        <span style="display: flex; gap: 8px; align-items: center"><span class="dot <?= $loaded ? 'ok' : 'bad' ?>" aria-hidden="true"></span><?= e($name) ?><span class="quiet"><?= $loaded ? '' : 'missing' ?></span></span>
+      <?php endforeach; ?>
+    </div>
+  </details>
+</div>
 <?php require APP_ROOT . '/app/Views/layout-bottom.php'; ?>
