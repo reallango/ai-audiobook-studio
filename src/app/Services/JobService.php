@@ -61,7 +61,8 @@ final class JobService
         $s = Database::connection()->prepare("SELECT setting_value FROM settings WHERE setting_key='worker_heartbeat'");
         $s->execute();
         $v = $s->fetchColumn();
-        return is_string($v) && (time() - (int) strtotime($v . ' UTC')) <= $withinSeconds;
+        if (is_string($v) && (time() - (int) strtotime($v . ' UTC')) <= $withinSeconds) return true;
+        return (int) Database::connection()->query("SELECT COUNT(*) FROM generation_jobs WHERE status='RUNNING' AND heartbeat_at > datetime('now','-150 seconds')")->fetchColumn() > 0;
     }
 
     public static function beat(): void

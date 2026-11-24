@@ -97,6 +97,6 @@ try {
     http_response_code(422);
     echo json_encode([
         'ok' => false,
-        'message' => $error->getMessage(),
+        'message' => \App\Core\App::userMessage($error),
     ], JSON_UNESCAPED_SLASHES);
 }

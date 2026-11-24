@@ -127,7 +127,7 @@ final class App
                         throw new \InvalidArgumentException('Unknown action.');
                 }
             } catch (Throwable $error) {
-                self::flash('error', $error->getMessage());
+                self::flash('error', self::userMessage($error));
             }
             self::redirect('rulesets', $back);
         }
@@ -205,12 +205,27 @@ final class App
                 (new \App\Services\LogicalSectionService())->updateAll($project['id'], $rows);
                 self::flash('success', $action === 'rename' ? 'Renamed.' : ($action === 'keep' ? 'Kept in the audiobook.' : 'Left out of the audiobook.'));
             } catch (Throwable $error) {
-                self::flash('error', $error->getMessage());
+                self::flash('error', self::userMessage($error));
             }
             $goNext = ($_POST['go'] ?? '') === 'next' && $next !== null;
             self::redirect('section-preview', ['id' => $project['id'], 'section' => $goNext ? $next : $id]);
         }
         self::view('section-preview', ['project' => $project, 'section' => $all[$at], 'blocks' => $repo->blocks($id), 'prev' => $prev, 'next' => $next, 'number' => $at + 1, 'total' => count($all)]);
+    }
+
+    /**
+     * What a person is told when something fails. Problems they can act on (a bad value, a missing file, a step that
+     * must come first) keep their own message; database and other internal errors are logged and summarised.
+     */
+    public static function userMessage(Throwable $error): string
+    {
+        if ($error instanceof \PDOException || $error instanceof \Error || !($error instanceof \InvalidArgumentException || $error instanceof \RuntimeException)) {
+            error_log(get_class($error) . ': ' . $error->getMessage() . ' at ' . $error->getFile() . ':' . $error->getLine());
+            return str_contains($error->getMessage(), 'database is locked')
+                ? 'The database was busy with background work. Try again in a moment.'
+                : 'Something went wrong on the server. Try again; if it keeps happening, the application log has the details.';
+        }
+        return $error->getMessage();
     }
 
     /** GET ?page=activity&id=PROJECT -> JSON {worker, active, items[]}: the background work for a project, for the activity bar. */
@@ -324,7 +339,9 @@ final class App
         header('Content-Type: audio/wav');
         header('Content-Length: ' . strlen($wav));
         header('Cache-Control: no-store');
-        header('X-Spoken-Text: ' . rawurlencode(mb_substr($spoken, 0, 600)));
+        $said = mb_substr($spoken, 0, 600);
+        while (strlen(rawurlencode($said)) > 1800) $said = mb_substr($said, 0, (int) (mb_strlen($said) * 0.8));
+        header('X-Spoken-Text: ' . rawurlencode($said));
         header('Access-Control-Expose-Headers: X-Spoken-Text');
         echo $wav;
     }
@@ -370,7 +387,7 @@ final class App
                 }
                 self::flash('success', $queued > 0 ? "Queued $queued chapter(s). The worker handles them one after another; this page shows the progress." : 'Nothing to queue: every approved chapter is up to date or already queued.');
             } catch (Throwable $error) {
-                self::flash('error', $error->getMessage());
+                self::flash('error', self::userMessage($error));
             }
             self::redirect('chapters', ['id' => $projectId]);
         }
@@ -422,7 +439,7 @@ final class App
                         throw new \InvalidArgumentException('Unknown action.');
                 }
             } catch (Throwable $error) {
-                self::flash('error', $error->getMessage());
+                self::flash('error', self::userMessage($error));
             }
             self::redirect('chapter-review', ['id' => $projectId, 'section' => $sectionId] + ($focus !== '' ? ['b' => $focus] : []));
         }
@@ -569,7 +586,7 @@ final class App
             try {
                 $zip = $exports->buildZip($projectId);
             } catch (\InvalidArgumentException $error) {
-                self::flash('error', $error->getMessage());
+                self::flash('error', self::userMessage($error));
                 self::redirect('chapters', ['id' => $projectId]);
             }
             session_write_close();

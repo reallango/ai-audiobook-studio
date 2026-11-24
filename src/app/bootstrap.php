@@ -33,5 +33,6 @@ $GLOBALS['app_config'] = require $configFile;
 
 if (session_status() !== PHP_SESSION_ACTIVE) {
     session_name('ai_audiobook_session');
+    session_set_cookie_params(['httponly' => true, 'samesite' => 'Lax', 'path' => '/']);
     session_start();
 }

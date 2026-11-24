@@ -117,13 +117,14 @@ final class AudioEncoder
     /** @param array<int,string> $argv */
     public static function runProcess(array $argv): string
     {
-        $process = @proc_open($argv, [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes);
-        if (!is_resource($process)) throw new RuntimeException('Cannot start ' . basename($argv[0]) . '. Is it installed?');
+        $errFile = tempnam(sys_get_temp_dir(), 'ffm');
+        $process = @proc_open($argv, [1 => ['pipe', 'w'], 2 => ['file', $errFile, 'w']], $pipes);
+        if (!is_resource($process)) { @unlink($errFile); throw new RuntimeException('Cannot start ' . basename($argv[0]) . '. Is it installed?'); }
         $out = (string) stream_get_contents($pipes[1]);
-        $err = (string) stream_get_contents($pipes[2]);
         fclose($pipes[1]);
-        fclose($pipes[2]);
         $code = proc_close($process);
+        $err = (string) @file_get_contents($errFile);
+        @unlink($errFile);
         if ($code !== 0) throw new RuntimeException(basename($argv[0]) . ' failed: ' . mb_substr(trim($err), 0, 300));
         return $out;
     }
