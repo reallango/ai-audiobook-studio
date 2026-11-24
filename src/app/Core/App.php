@@ -573,6 +573,8 @@ final class App
                 self::redirect('chapters', ['id' => $projectId]);
             }
             session_write_close();
+            ignore_user_abort(true);                                 // finish and clean up even if the browser stops reading
+            register_shutdown_function(static function () use ($zip): void { @unlink($zip); });
             self::streamFile($zip, $slug . '-m4a.zip', 'application/zip', true);
             return;
         }

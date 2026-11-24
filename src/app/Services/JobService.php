@@ -30,6 +30,9 @@ final class JobService
 
         $job = $this->forChapter($logicalId);
         if ($job !== null && in_array($job['status'], ['QUEUED', 'RUNNING'], true)) return $job;
+        // segments that ran out of attempts (the voice server was down) get fresh attempts when asked again
+        $this->db()->prepare("UPDATE segments SET status='PENDING', attempts=0, error=NULL, claimed_at=NULL WHERE logical_section_id=:l AND status='FAILED'")
+            ->execute(['l' => $logicalId]);
 
         $this->db()->prepare(
             "INSERT INTO generation_jobs(id,project_id,logical_section_id,status) VALUES(:id,:p,:l,'QUEUED')
@@ -83,6 +86,7 @@ final class JobService
             if ($status['needs_prepare'] || !$status['prepared']) $this->generation->prepare($projectId, $logicalId);
 
             for (;;) {
+                if ($this->generation->status($projectId, $logicalId)['needs_prepare']) $this->generation->prepare($projectId, $logicalId);
                 if ($shouldStop !== null && $shouldStop()) { $this->release($job, 'QUEUED', 'Paused by a restart.'); return true; }
                 if (!$this->stillWanted($job)) return true;     // cancelled
                 $this->heartbeat($job);
@@ -98,6 +102,12 @@ final class JobService
                 return true;
             }
             if (!$this->stillWanted($job)) return true;
+            $latest = $this->generation->status($projectId, $logicalId);
+            if (!$latest['approved']) throw new InvalidArgumentException('The chapter is no longer approved.');
+            if ($latest['needs_prepare']) {                       // changed during the last segment: one more round
+                $this->release($job, 'QUEUED', 'The chapter changed while it was being made; carrying on with the new text or voice.');
+                return true;
+            }
             $this->generation->assemble($projectId, $logicalId);
             $this->release($job, 'DONE', 'Chapter audio is ready.');
         } catch (Throwable $e) {

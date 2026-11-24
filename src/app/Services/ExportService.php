@@ -77,13 +77,17 @@ final class ExportService
 
         $dir = $this->absolute($projectId . '/export');
         if (!is_dir($dir) && !mkdir($dir, 0775, true) && !is_dir($dir)) throw new RuntimeException('Cannot create the export folder.');
-        $slug = preg_replace('/[^A-Za-z0-9]+/', '-', (string) $project['title']) ?: 'audiobook';
-        $rel = $projectId . '/export/' . trim($slug, '-') . '.m4b';
+        $slug = trim((string) preg_replace('/[^A-Za-z0-9]+/', '-', (string) $project['title']), '-');
+        $rel = $projectId . '/export/' . ($slug !== '' ? $slug : 'audiobook') . '.m4b';
         $meta = $dir . '/.chapters.ffmetadata';
         file_put_contents($meta, AudioEncoder::metadataFile($tags, $chapters));
-        $this->encoder->joinToM4b(array_column($ready, 'path'), $dir . '/.files.txt', $meta, $this->absolute($rel));
-        @unlink($meta);
-        @unlink($dir . '/.files.txt');
+        try {
+            $this->encoder->joinToM4b(array_column($ready, 'path'), $dir . '/.files.txt', $meta, $this->absolute($rel));
+        } finally {
+            @unlink($meta);
+            @unlink($dir . '/.files.txt');
+            @unlink($this->absolute($rel) . '.part');
+        }
 
         $found = $this->encoder->chapterCount($this->absolute($rel));
         $this->db()->prepare(

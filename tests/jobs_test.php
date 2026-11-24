@@ -102,6 +102,37 @@ $gen->reset('p', 'L', null);
 $jobs->runNext();
 check('and succeeds after the retry', $jobs->forChapter('L')['status'], 'DONE');
 
+// "Generate all" after an outage: queuing a failed chapter again retries it without a manual reset
+$narr->setOverride('p', 'L', 'b4', 'The voice server is down for this one.');
+$narr->approve('p', 'L');
+$jobs->enqueue('p', 'L');
+$failOn = 'server is down';
+$jobs->runNext();
+check('the outage fails the chapter', $jobs->forChapter('L')['status'], 'FAILED');
+$failOn = null;
+$calls = 0;
+$jobs->enqueue('p', 'L');
+$jobs->runNext();
+check('queuing it again retries the failed segment and finishes', [$jobs->forChapter('L')['status'], $calls > 0], ['DONE', true]);
+
+// a segment still being made elsewhere means "not finished yet", never an early assemble
+$narr->setOverride('p', 'L', 'b4', 'A segment someone else is making right now.');
+$narr->approve('p', 'L');
+$gen->prepare('p', 'L');
+$pdo->exec("UPDATE segments SET status='GENERATING', claimed_at=datetime('now') WHERE logical_section_id='L' AND status='PENDING'");
+check('a segment in progress elsewhere reports busy, not done', !empty($gen->generateNext('p', 'L')['busy']), true);
+$pdo->exec("UPDATE segments SET status='GENERATING', claimed_at=datetime('now','-1 hour') WHERE logical_section_id='L' AND status='GENERATING'");
+$stale = $pdo->query("SELECT id, claimed_at FROM segments WHERE logical_section_id='L' AND status='GENERATING' LIMIT 1")->fetch();
+$take = $pdo->prepare("UPDATE segments SET status='GENERATING', claimed_at=CURRENT_TIMESTAMP WHERE id=:id AND status='GENERATING' AND claimed_at IS :c");
+$take->execute(['id' => $stale['id'], 'c' => $stale['claimed_at']]);
+$first = $take->rowCount();
+$take->execute(['id' => $stale['id'], 'c' => $stale['claimed_at']]);
+check('a stale claim can be taken over only once', [$first, $take->rowCount()], [1, 0]);
+$pdo->exec("UPDATE segments SET status='PENDING', claimed_at=NULL WHERE logical_section_id='L' AND status='GENERATING'");
+$jobs->enqueue('p', 'L');
+$jobs->runNext();
+check('the chapter then finishes normally', $jobs->forChapter('L')['status'], 'DONE');
+
 // cancel
 $narr->setOverride('p', 'L', 'b0', 'Cancelled before it could finish.');
 $narr->approve('p', 'L');

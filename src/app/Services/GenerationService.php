@@ -100,10 +100,16 @@ final class GenerationService
         );
         $pick->execute(['l' => $logicalId, 'max' => self::MAX_ATTEMPTS, 'stale' => self::STALE_CLAIM]);
         $row = $pick->fetch();
-        if (!$row) return ['segment' => null, 'counts' => $this->counts($logicalId)];
+        if (!$row) {
+            $counts = $this->counts($logicalId);
+            // another request is still making a segment: not finished yet, so the caller waits instead of assembling
+            return ['segment' => null, 'counts' => $counts] + ($counts['generating'] > 0 ? ['busy' => true] : []);
+        }
 
-        $claim = $db->prepare("UPDATE segments SET status='GENERATING', claimed_at=CURRENT_TIMESTAMP, attempts=attempts+1, updated_at=CURRENT_TIMESTAMP WHERE id=:id AND status=:s");
-        $claim->execute(['id' => $row['id'], 's' => $row['status']]);
+        // claimed_at is part of the condition, so two callers that both picked a stale claim cannot both take it
+        $claim = $db->prepare("UPDATE segments SET status='GENERATING', claimed_at=CURRENT_TIMESTAMP, attempts=attempts+1, updated_at=CURRENT_TIMESTAMP
+            WHERE id=:id AND status=:s AND claimed_at IS :c");
+        $claim->execute(['id' => $row['id'], 's' => $row['status'], 'c' => $row['claimed_at']]);
         if ($claim->rowCount() !== 1) return ['segment' => null, 'busy' => true, 'counts' => $this->counts($logicalId)];
 
         try {

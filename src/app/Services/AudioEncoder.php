@@ -48,9 +48,13 @@ final class AudioEncoder
     {
         if (!self::validBitrate($kbps)) throw new RuntimeException('Unsupported audio bitrate.');
         $tmp = $m4a . '.part';
-        ($this->runner)(self::encodeArgs($this->ffmpeg(), $wav, $tmp, $kbps, $meta));
-        if (!is_file($tmp) || filesize($tmp) === 0) throw new RuntimeException('The encoder produced no audio.');
-        if (!rename($tmp, $m4a)) throw new RuntimeException('Cannot store the encoded audio.');
+        try {
+            ($this->runner)(self::encodeArgs($this->ffmpeg(), $wav, $tmp, $kbps, $meta));
+            if (!is_file($tmp) || filesize($tmp) === 0) throw new RuntimeException('The encoder produced no audio.');
+            if (!rename($tmp, $m4a)) throw new RuntimeException('Cannot store the encoded audio.');
+        } finally {
+            if (is_file($tmp)) @unlink($tmp);                   // a failed encode leaves no half-written file behind
+        }
     }
 
     /** Duration of an audio file in milliseconds, from ffprobe. */
