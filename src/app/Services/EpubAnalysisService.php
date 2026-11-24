@@ -8,9 +8,15 @@ use DOMDocument; use DOMElement; use DOMNode; use DOMXPath;
 use InvalidArgumentException; use RuntimeException; use Throwable; use ZipArchive;
 final class EpubAnalysisService
 {
-    public function analyze(string $projectId): array
+    /**
+     * Reads the stored EPUB into source sections and paragraphs. Reading it again replaces the chapter structure and
+     * everything built on it (edits, approvals, audio), so that needs $replaceChapters, never a stray resubmit.
+     */
+    public function analyze(string $projectId, bool $replaceChapters = false): array
     {
         $project=(new ProjectRepository())->find($projectId); if(!$project) throw new InvalidArgumentException('Project not found.');
+        if(($project['status']??'')==='ARCHIVED') throw new InvalidArgumentException('Restore the project before reading the EPUB again.');
+        if(!$replaceChapters && (new \App\Repositories\LogicalSectionRepository())->exists($projectId)) throw new InvalidArgumentException('This book already has chapters. Reading the EPUB again would replace them and every edit, approval and audio file made since, so it was not done.');
         $asset=(new SourceAssetRepository())->findByProject($projectId); if(!$asset) throw new InvalidArgumentException('Upload an EPUB first.');
         $epub=rtrim((string)config('paths.projects'),'/').'/'.$projectId.'/'.$asset['stored_relpath'];
         if(!is_file($epub)) throw new RuntimeException('The immutable original.epub is missing.');

@@ -160,6 +160,10 @@ final class EpubUploadService
 
             $pdo = Database::connection();
             $pdo->beginTransaction();
+            // Only files this request put in place are removed on failure: a second, simultaneous upload of the same
+            // book must not delete the first one's stored EPUB.
+            $promotedEpub = false;
+            $promotedManifest = false;
             try {
                 (new SourceAssetRepository())->create($metadata);
                 $update = $pdo->prepare(
@@ -172,18 +176,20 @@ final class EpubUploadService
                 if (!rename($stagedPath, $finalPath)) {
                     throw new RuntimeException('Could not promote the immutable source EPUB.');
                 }
+                $promotedEpub = true;
                 if (!rename($manifestTemporary, $manifestFinal)) {
                     throw new RuntimeException('Could not promote the source manifest.');
                 }
+                $promotedManifest = true;
 
                 $pdo->commit();
             } catch (Throwable $error) {
                 if ($pdo->inTransaction()) {
                     $pdo->rollBack();
                 }
-                @unlink($finalPath);
-                @unlink($manifestTemporary);
-                @unlink($manifestFinal);
+                if ($promotedEpub) @unlink($finalPath);
+                if (!$promotedManifest) @unlink($manifestTemporary);
+                if ($promotedManifest) @unlink($manifestFinal);
                 throw $error;
             }
 

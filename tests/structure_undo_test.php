@@ -74,6 +74,36 @@ $svc->undo('p');
 check('undo brings the combined sections back', array_column($rows(), 0), ['L1', 'L2', 'L3']);
 check('chapter 2 kept its work through combine and undo', [$edits() > 0, $settings()], [true, 1]);
 
+// work on a paragraph follows the paragraph when sections are split or combined
+$narr->saveParagraphText('p', 'L3', 'b3', 'Chapter three has some words to read aloud now.');
+$narr->setExcluded('p', 'L1', 'b1b', true);
+$whereEdits = static fn (string $block): array => $pdo->query("SELECT DISTINCT logical_section_id FROM narration_edits WHERE source_block_id='$block'")->fetchAll(PDO::FETCH_COLUMN);
+$svc->combine('p', ['L2', 'L3']);
+check('combining keeps the absorbed chapter\'s edits, now in the joined chapter', [$whereEdits('b3'), $whereEdits('b2')], [['L2'], ['L2']]);
+check('and the joined chapter narrates both edits', str_contains(implode(' ', array_column($narr->chapter('p', 'L2')['items'], 'narration')), 'read aloud now'), true);
+$svc->undo('p');
+check('undoing the combine gives the edit back to its own chapter', [$whereEdits('b3'), $whereEdits('b2')], [['L3'], ['L2']]);
+
+$svc->split('p', 'L1', 'b1b', 'Part 2');
+$newId = array_column($rows(), 0)[1];
+$skipped = static fn (string $section): array => array_column(array_filter($narr->chapter('p', $section)['items'], static fn (array $i): bool => $i['excluded']), 'id');
+check('a skipped paragraph stays skipped in the new part after a split', $skipped($newId), ['b1b']);
+check('positions after a split are 1..n', array_column($rows(), 3), [1, 2, 3, 4]);
+$svc->combine('p', ['L1', $newId]);
+check('the two halves of a split can be combined back', [count($rows()), count($repo->blocks('L1'))], [3, 2]);
+check('and the skip comes back with them', $skipped('L1'), ['b1b']);
+$svc->split('p', 'L1', 'b1b', '');
+check('a split with no title gets a sensible one', $rows()[1][1], 'Section 1 Part 2');
+$svc->combine('p', [$rows()[1][0], 'L2']);
+check('a split part can be combined with the next chapter straight away', count($rows()), 3);
+
+// a failed operation does not leave an undo step behind
+$revisions = static fn (): int => (int) $pdo->query("SELECT COUNT(*) FROM logical_structure_revisions WHERE undone_at IS NULL")->fetchColumn();
+$before = $revisions();
+try { $svc->updateAll('p', [['id' => 'L1', 'title' => 'x', 'included' => 1]]); } catch (InvalidArgumentException $e) { }
+check('a stale page that leaves out sections is refused', isset($e) ? str_contains($e->getMessage(), 'Reload the page') : false, true);
+check('and records no undo step', $revisions(), $before);
+
 @unlink($db);
 echo $failures === 0 ? "\nall passed\n" : "\n$failures failed\n";
 exit($failures === 0 ? 0 : 1);
