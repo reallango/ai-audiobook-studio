@@ -48,5 +48,82 @@ Series sets: a named bundle of rules (for example "Star Trek DS9") that can be a
 | 2 | **Move or copy a rule** to another ruleset (default, a voice, a shared ruleset, a project). A rule with the same written form there is replaced, and the message says so. | done |
 | 3 | **Regex rules and a regex helper.** Each rule gets a match type: whole word, anywhere, or regex. A helper builds the pattern from plain choices (starts with, ends with, contains, any of these words, optional letters, digits, capitalised word, possessive) with a plain-English description and a live count of matches in the book. The example finder and prev/next use the same matching. Safety: patterns are validated on save, length-limited, and run with a low backtracking limit. | done |
 | 4 | **Text checks**: a project tab that scans the book for things that trip a voice and lists them with counts, examples and the same sound-test bar. A dropdown picks the kind: proper nouns, numbers (years, ordinals, digits with units), Roman numerals, initialisms, abbreviations, dates and times, odd spellings. Common words that merely look like proper nouns are filtered out with a word list (the container's `wamerican` list). Each row can become a rule. | after 3 |
-| 5 | **Automatic sound test.** Spike first, then decide: (a) does the Kokoro server accept inline phonemes, which would make rules exact; (b) reference pronunciations from an online dictionary (IPA and audio); (c) how to judge "sounds alike" (speech recognition on the synthesized clip, or phoneme comparison); (d) an upload for a reference clip when none is found. Deliverable: a measured prototype on about ten words before any UI. | spike |
+| 5 | **Automatic sound test.** Spike first, then decide: (a) does the Kokoro server accept inline phonemes, which would make rules exact; (b) reference pronunciations from an online dictionary (IPA and audio); (c) how to judge "sounds alike" (speech recognition on the synthesized clip, or phoneme comparison); (d) an upload for a reference clip when none is found. Deliverable: a measured prototype on about ten words before any UI. | spike done; phase 1 next (see Automatic pronunciation check) |
 | 6 | **Project page layout**: a workflow stepper (Source, Structure, Rulesets, Review, Generate, Export) with a status and one clear next action per step; settings move into their own panel; the lifecycle controls fold away. | planned |
+
+## Automatic pronunciation check (item 5)
+
+Goal: for the words on the Suggestions tab, find how each should sound, check what the voice actually says, and
+end with two lists: suggested rules (with a confidence score) and words nobody could find.
+
+### Spike results (2026-11-24)
+
+- **The voice server accepts exact pronunciations.** `[Habana](/həbˈɑnə/)` in the text is spoken with those sounds
+  (plain, right-sounds and wrong-sounds versions all gave different audio, none read the brackets aloud). So a rule
+  can carry the exact sounds; no need to guess respellings when a reference exists.
+- **The server is a minimal wrapper** (hwdsl2/docker-kokoro): `/v1/audio/speech`, `/v1/voices`, `/v1/models`. It
+  cannot say which sounds it will use for a piece of text, and nothing on the network can listen to audio.
+- **Online references** (Wiktionary, then Wikipedia, with the book's title as search context):
+  real places are well covered (Havana, Hatteras: English; Matanzas, Cienfuegos: Spanish); some invented names
+  (Odo, Bajoran) have an English pronunciation; most character names (Sisko, Worf, Picard, Quark) and small places
+  (Guanabacoa, Malecón) have none.
+- **Rate limits:** Wikipedia refused requests after about 30 quick lookups. Look up about one word a second, in the
+  background, with a cache so each word is looked up once.
+
+### Phase 1: look up, convert, suggest (in the app, no new services)
+
+1. **Background task** "Check pronunciations online" from the Suggestions tab (kind `pron_check`, run by the build
+   worker; shows in Activity with progress). Settings per run: which kinds (names by default), minimum confidence
+   for "make all".
+2. **Lookup** per word, cached in a new `pronunciation_refs` table (word, language, IPA, source URL, source kind,
+   looked_up_at, status found|none|error): Wiktionary page for the word (and lowercase) → Wikipedia page →
+   Wikipedia search with the book title (and author) as context. Parse `{{IPA|..}}`, `{{IPAc-en|..}}`,
+   `{{IPA-xx|..}}`, `{{lang-xx|..}}`. Throttle 1 request per second, back off on 429, generic User-Agent.
+3. **Convert** IPA to Kokoro's sound symbols (misaki set: stress marks kept; diphthongs to its single letters,
+   e.g. eɪ→A, aɪ→I, oʊ→O, aʊ→W, ɔɪ→Y; non-English sounds to the nearest English ones, e.g. ɣ→g, β→b, ɱ→m, x→h,
+   r/ɾ→ɹ, ʎ→j). A table-driven converter with tests on the spike words.
+4. **Confidence** from the source: High = English IPA on a page whose title is the word (or a redirect to it);
+   Medium = another language's IPA, or a page found by search; Low = the word appears only as part of another title.
+5. **Results page** (Suggestions tab, new "Checked online" view): Suggested rules (word, how it will sound as a
+   readable respelling such as "Ha-BAH-nah", confidence, source link, Try, Make rule, Dismiss; "Make all high-
+   confidence rules") and Couldn't find (Try in the sound test to set by ear). Rules made here use the exact markup
+   as their spoken form; the rule list shows the readable respelling next to it.
+6. **Tests**: parser on saved page samples, converter table, confidence rules, throttling/caching with a fake HTTP
+   client, rule creation.
+
+### Phase 2: listen to the voice and score it (a small new service on AI-Laptop)
+
+**The service** (`pron-check`, Python, one container next to Kokoro, internal network only, API key like Kokoro):
+- `POST /g2p {text, lang}` → the sounds Kokoro will use (misaki, the same G2P Kokoro runs). Fast, no audio.
+- `POST /recognize` (WAV) → the sounds heard in the audio, from a phoneme-recognition model
+  (first choice `facebook/wav2vec2-xlsr-53-espeak-cv-ft`; fallback Allosaurus on CPU).
+- `POST /score {reference_ipa, candidate_ipa}` → 0–100, from a phoneme edit distance where similar sounds cost
+  less (articulatory features, e.g. panphon), with stress ignored or weighted lightly.
+
+**How a word is checked:**
+1. Reference sounds: from phase 1 (online IPA) or from a clip you upload (recognized by the service).
+2. Make the word with the voice inside a short carrier sentence, cut the word out by timing, recognize its sounds,
+   score against the reference → the confidence rating for how the voice says it now.
+3. If below the minimum (a setting, default 80): try candidates and keep the best:
+   the exact markup from the reference (usually wins outright); then respellings generated from the reference
+   sounds (a sound-to-spelling table, a few variants per word), each first scored cheaply with `/g2p`, the top three
+   checked by audio. Stop at the first one above the minimum, at most about ten tries per word.
+4. Result per word: before score, best candidate, after score, source. Above the minimum → Suggested rules; below →
+   "Needs your ear", with the best attempt and its score.
+
+**For words with no reference** the service cannot judge correctness; it can only offer the voice's current reading
+and a couple of alternatives to choose from by ear. Uploading a clip (your own recording, or one found elsewhere)
+gives it a reference.
+
+**Before building phase 2, measure on about 20 words** (spike words plus common English words as a control):
+recognition accuracy on Kokoro audio; whether scores separate right from wrong pronunciations (want a clear gap);
+speed per word on AI-Laptop (GPU vs CPU); container size and memory. Go ahead only if right readings score clearly
+higher than wrong ones.
+
+**Deployment:** a Bosun stack built from a small repo folder (`pron-check/`, Dockerfile, requirements pinned),
+`PRON_CHECK_URL` and `PRON_CHECK_API_KEY` in the app's environment; the app works without it (phase 1 only) and
+Diagnostics shows whether it is reachable.
+
+**Risks:** recognition models are trained on human speech and may mishear synthetic voices; short words score
+noisily (use carrier sentences and average two takes); the model download is large (about 1.3 GB); GPU sharing with
+Kokoro.
