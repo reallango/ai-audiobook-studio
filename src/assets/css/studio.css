@@ -402,3 +402,42 @@ input:not([type="checkbox"]):not([type="radio"]):not([type="file"]), select, tex
 .activity-pop .act-state { min-width: 0; text-transform: none; letter-spacing: 0; font-size: 13px; }
 /* older stylesheets made every form a grid, stretching single buttons; forms on the new pages lay themselves out */
 .app-main form:not([class]) { display: block; }
+
+/* ---- wide screens ----
+ * The reading column widens with the screen (up to a comfortable line length), and from about 1500px the page stops
+ * stretching edge to edge: side panels become floating cards that stay beside the centred content. */
+.read-col { max-width: 780px; margin: 0 auto; }
+@media (min-width: 1100px) {
+  /* Arrange and Export: two proportional columns, so the reading panel grows with the screen */
+  .split-view { display: grid; grid-template-columns: minmax(0, 3fr) minmax(340px, 2fr); gap: 24px; align-items: start; }
+  .split-side { max-width: none; }
+}
+@media (min-width: 1500px) {
+  .page { max-width: 1360px; }
+  .page.wide { max-width: 1680px; margin: 0 auto; padding: 28px 32px 56px; }
+  .split-view { grid-template-columns: minmax(0, 1fr) minmax(420px, 0.85fr); gap: 28px; }
+  .reader { font-size: 18px; }
+
+  .three { max-width: 1760px; margin: 0 auto; padding: 20px 24px 24px; gap: 24px; flex-wrap: nowrap; align-items: flex-start; box-sizing: border-box; }
+  .three-list, .three-side {
+    position: sticky; top: 76px; max-height: calc(100vh - 56px - 64px - 40px); overflow: auto;
+    border: 1px solid var(--rule); border-radius: 14px; background: var(--paper);
+  }
+  .three-list { flex: 0 0 280px; max-width: 280px; padding: 14px 10px; }
+  .three-side { flex: 0 0 360px; max-width: 360px; padding: 18px; }
+  .three-main { flex: 1 1 auto; padding: 4px 8px 32px; }
+  .read-col { max-width: 900px; }
+  .book.reader { font-size: 19px; }
+}
+@media (min-width: 1900px) {
+  .page { max-width: 1520px; }
+  .page.wide { max-width: 1840px; }
+  .three { max-width: 1960px; gap: 32px; }
+  .three-list { flex-basis: 300px; max-width: 300px; }
+  .three-side { flex-basis: 400px; max-width: 400px; }
+  .read-col { max-width: 1000px; }
+  .book.reader { font-size: 20px; }
+  .grid-cards { grid-template-columns: repeat(auto-fill, minmax(380px, 1fr)); }
+}
+/* a page whose side column only holds a small summary keeps it narrow */
+@media (min-width: 1100px) { .split-view.side-narrow { grid-template-columns: minmax(0, 1fr) minmax(280px, 340px); } }

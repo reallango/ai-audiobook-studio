@@ -29,7 +29,7 @@ $build = static fn (string $label, string $class = ''): string => '<form method=
     </div>
   </div>
 
-  <div class="split-view">
+  <div class="split-view side-narrow">
     <div class="split-main" style="display: grid; gap: 20px">
       <section class="card" aria-label="Audiobook file" style="display: flex; gap: 22px; flex-wrap: wrap">
         <div aria-hidden="true" style="width: 132px; height: 190px; flex: none; border-radius: 8px; background: #22364F; color: #F2E6C9; display: flex; flex-direction: column; justify-content: flex-end; padding: 14px; box-sizing: border-box; font-family: var(--serif)">

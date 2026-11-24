@@ -85,7 +85,7 @@ $renderPieces = static function (array $item): string {
   </nav>
 
   <div class="three-main">
-    <div style="max-width: 760px; margin: 0 auto">
+    <div class="read-col">
       <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap">
         <div>
           <p class="quiet" style="margin: 0">Chapter <?= (int) $number ?> of <?= count($rows) ?> · <?= number_format((int) $chapter['words']) ?> words · voice <?= e((string) $chapter['voice']) ?></p>
