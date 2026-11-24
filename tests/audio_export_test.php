@@ -129,6 +129,43 @@ check('files are stored, not compressed', $zip->statIndex(0)['comp_method'], Zip
 $zip->close();
 @unlink($zipPath);
 
+// ----- the spoken introduction -----
+use App\Services\IntroService;
+$introCalls = [];
+$intro = new IntroService(function (string $text, string $voice, float $speed) use (&$introCalls, $fakeSynth): string { $introCalls[] = [$text, $voice]; return $fakeSynth($text); }, $fakeEncode);
+$withIntro = new ExportService($exportEnc, $intro);
+$project = $pdo->query("SELECT * FROM projects WHERE id='p'")->fetch();
+$standard = IntroService::defaultText($project, 'An Author');
+$exports->buildM4b('p');                                // a current audiobook without an introduction to start from
+check('the standard introduction names the book, author, app, voice service and voice, and says personal use only', [
+    str_starts_with($standard, 'My Book, by An Author.'), str_contains($standard, 'AI Audiobook Studio'), str_contains($standard, 'Kokoro text-to-speech server'),
+    str_contains($standard, 'Michael, an American male voice'), str_contains($standard, 'personal use only')], [true, true, true, true, true]);
+check('voice ids are read as names', [IntroService::speakableVoice('bf_emma'), IntroService::speakableVoice('af_bella+af_sky')], ['Emma, a British female voice', 'a blend of Bella and Sky']);
+check('with the introduction off nothing changes', [$intro->text($project), $intro->signature('p'), $withIntro->isCurrent('p')], [null, '', true]);
+$intro->save('p', true, $standard);
+check('saving the standard text stores it as standard, so it follows later changes', $pdo->query("SELECT intro_enabled, intro_text FROM projects WHERE id='p'")->fetch(PDO::FETCH_NUM), [1, null]);
+check('switching it on makes the audiobook out of date', $withIntro->isCurrent('p'), false);
+$row = $withIntro->buildM4b('p');
+check('the rebuilt audiobook opens with the introduction', [str_contains($metadataSeen, 'title=Introduction'), (int) $row['chapter_count'] >= 2, count($introCalls)], [true, true, 1]);
+check('the book\'s rules apply to the introduction text', str_contains($introCalls[0][0], 'My Book'), true);
+check('and it is up to date again', $withIntro->isCurrent('p'), true);
+$withIntro->buildM4b('p');
+check('the introduction audio is made once and reused', count($introCalls), 1);
+$zipPath = $withIntro->buildZip('p');
+$zip = new ZipArchive();
+$zip->open($zipPath);
+$names = [];
+for ($i = 0; $i < $zip->numFiles; $i++) $names[] = $zip->getNameIndex($i);
+$zip->close();
+@unlink($zipPath);
+check('the ZIP starts with the introduction as file 000', $names, ['000 - Introduction.m4a', '001 - Chapter 1.m4a', '002 - Chapter 2.m4a']);
+$intro->save('p', true, 'My own words about this book.');
+check('edited text makes it out of date and is made again on the next build', [$withIntro->isCurrent('p'), (function () use ($withIntro, &$introCalls): int { $withIntro->buildM4b('p'); return count($introCalls); })()], [false, 2]);
+$refused = expectError(fn () => $intro->save('p', true, str_repeat('x', IntroService::MAX_CHARS + 1)));
+check('an over-long introduction is refused', $refused, 'rejected');
+$intro->save('p', false, '');
+check('switching it off goes back to the chapters alone', [$withIntro->isCurrent('p'), $intro->text($pdo->query("SELECT * FROM projects WHERE id='p'")->fetch())], [false, null]);
+
 function rrmdir(string $d): void { foreach (glob("$d/{,.}*", GLOB_BRACE) ?: [] as $f) { if (in_array(basename($f), ['.', '..'], true)) continue; is_dir($f) ? rrmdir($f) : @unlink($f); } @rmdir($d); }
 rrmdir($tmp);
 echo $failures === 0 ? "\nall passed\n" : "\n$failures failed\n";

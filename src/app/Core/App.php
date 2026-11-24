@@ -24,7 +24,7 @@ final class App
     public static function run(): void
     {
         $route=trim((string)($_GET['page']??'projects'),'/');
-        try{match($route){'api-health'=>self::json(self::health()),'diagnostics'=>self::view('diagnostics'),'projects','home',''=>self::projects(),'quick-import'=>self::quickImport(),'arrange'=>self::arrange(),'proofread'=>self::proofread(),'pronounce'=>self::pronounce(),'arrange-action'=>self::arrangeAction(),'section-text'=>self::sectionText(),'project-create'=>self::createProject(),'project'=>self::project(),'epub-upload'=>self::epubUpload(),'epub-analyze'=>self::epubAnalyze(),'source-sections'=>self::sourceSections(),'source-section'=>self::sourceSection(),'project-archive'=>self::archiveProject(),'project-restore'=>self::restoreProject(),'project-delete'=>self::deleteProject(),'voice-lab'=>self::voiceLab(),'voice-preview'=>self::voicePreview(),'pronunciation'=>self::pronunciation(),'rulesets'=>self::pronunciation(),'pronunciation-rule'=>self::pronunciationRule(),'pronunciation-example'=>self::pronunciationExample(),'rulesets-regex'=>self::regexPreview(),'textchecks'=>self::textChecks(),'activity'=>self::activity(),'section-preview'=>self::sectionPreview(),'chapters'=>self::chapters(),'chapter-review'=>self::chapterReview(),'chapter-audio'=>self::chapterAudio(),'chapter-text'=>self::chapterText(),'audio'=>self::audio(),'export'=>self::export(),default=>self::notFound()};}
+        try{match($route){'api-health'=>self::json(self::health()),'diagnostics'=>self::view('diagnostics'),'projects','home',''=>self::projects(),'quick-import'=>self::quickImport(),'arrange'=>self::arrange(),'proofread'=>self::proofread(),'pronounce'=>self::pronounce(),'intro-settings'=>self::introSettings(),'arrange-action'=>self::arrangeAction(),'section-text'=>self::sectionText(),'project-create'=>self::createProject(),'project'=>self::project(),'epub-upload'=>self::epubUpload(),'epub-analyze'=>self::epubAnalyze(),'source-sections'=>self::sourceSections(),'source-section'=>self::sourceSection(),'project-archive'=>self::archiveProject(),'project-restore'=>self::restoreProject(),'project-delete'=>self::deleteProject(),'voice-lab'=>self::voiceLab(),'voice-preview'=>self::voicePreview(),'pronunciation'=>self::pronunciation(),'rulesets'=>self::pronunciation(),'pronunciation-rule'=>self::pronunciationRule(),'pronunciation-example'=>self::pronunciationExample(),'rulesets-regex'=>self::regexPreview(),'textchecks'=>self::textChecks(),'activity'=>self::activity(),'section-preview'=>self::sectionPreview(),'chapters'=>self::chapters(),'chapter-review'=>self::chapterReview(),'chapter-audio'=>self::chapterAudio(),'chapter-text'=>self::chapterText(),'audio'=>self::audio(),'export'=>self::export(),default=>self::notFound()};}
         catch(Throwable $error){error_log($error->__toString());http_response_code(500);self::view('error',['message'=>config('app.debug',false)?$error->getMessage():'The request could not be completed. Check the application log for details.']);}
     }
     private static function voiceLab():void
@@ -238,6 +238,25 @@ final class App
             'kind' => $kind, 'suggestions' => $suggestions, 'kindCounts' => $kindCounts, 'hasDictionary' => TextCheckService::dictionary() !== null,
             'linked' => $linked, 'available' => array_values(array_filter($svc->sets(), static fn (array $s): bool => !in_array($s['id'], $linkedIds, true))),
         ]);
+    }
+
+    /** POST from Settings: switch the spoken introduction on or off and keep its text. */
+    private static function introSettings():void
+    {
+        self::requirePost();
+        self::requireCsrf();
+        $project = self::requireProject();
+        $id = (string) $project['id'];
+        try {
+            if (($project['status'] ?? '') === 'ARCHIVED') throw new \InvalidArgumentException('Restore the book before changing it.');
+            $reset = ($_POST['reset'] ?? '') === '1';
+            (new \App\Services\IntroService())->save($id, ($_POST['enabled'] ?? '') === '1', $reset ? '' : (string) ($_POST['text'] ?? ''));
+            self::flash('success', $reset ? 'The introduction is back to the standard text.' : (($_POST['enabled'] ?? '') === '1' ? 'Introduction saved. It goes in the next time the audiobook is built.' : 'Introduction switched off.'));
+        } catch (Throwable $error) {
+            self::flash('error', self::userMessage($error));
+        }
+        header('Location: ' . base_url('project', ['id' => $id]) . '#intro', true, 303);
+        exit;
     }
 
     /** GET ?page=activity&id=PROJECT -> JSON {worker, active, items[]}: the background work for a project, for the activity bar. */

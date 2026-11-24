@@ -80,6 +80,32 @@ require APP_ROOT . '/app/Views/layout-top.php';
       </form>
     </section>
 
+    <?php
+      $introSvc = new \App\Services\IntroService();
+      $introOn = (int) ($project['intro_enabled'] ?? 0) === 1;
+      $standard = \App\Services\IntroService::defaultText($project, $introSvc->author($pid));
+      $introText = trim((string) ($project['intro_text'] ?? '')) !== '' ? (string) $project['intro_text'] : $standard;
+    ?>
+    <section class="card" id="intro" aria-labelledby="h-intro">
+      <h2 id="h-intro">Spoken introduction</h2>
+      <p class="muted" style="margin: 6px 0 12px">Read before the first chapter: the title and author, how the audiobook was made, and that it is for personal use only. It goes in the audiobook file and the ZIP as “Introduction”.</p>
+      <form method="post" action="<?= e(base_url('intro-settings')) ?>" style="display: grid; gap: 12px" data-intro>
+        <?= csrf_field() ?><input type="hidden" name="id" value="<?= e($pid) ?>">
+        <label style="display: flex; gap: 10px; align-items: center; font-size: 14px"><input type="checkbox" name="enabled" value="1" <?= $introOn ? 'checked' : '' ?> <?= $archived ? 'disabled' : '' ?>> Start the audiobook with this introduction</label>
+        <label style="display: grid; gap: 4px; font-weight: 600; font-size: 14px">What is read
+          <textarea name="text" rows="4" maxlength="<?= \App\Services\IntroService::MAX_CHARS ?>" style="font-family: var(--serif); font-size: 16px; line-height: 1.55" <?= $archived ? 'disabled' : '' ?>><?= e($introText) ?></textarea>
+          <span class="quiet" style="font-weight: 400">The standard text follows the book's title, author and voice when they change. Edited text stays as you wrote it. The book's pronunciation rules apply.</span></label>
+        <div style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center">
+          <?php if (!$archived): ?><button type="submit">Save</button><?php endif; ?>
+          <button type="button" class="btn-outline" data-intro-hear data-endpoint="<?= e(base_url('voice-preview')) ?>" data-token="<?= e(Csrf::token()) ?>"
+                  data-voice="<?= e($voiceValue !== '' ? $voiceValue : \App\Services\VoiceCatalog::DEFAULT_VOICE) ?>" data-speed="<?= e(number_format($speedValue, 2, '.', '')) ?>" data-project="<?= e($pid) ?>">Hear it</button>
+          <?php if (!$archived && $introText !== $standard): ?><button type="submit" name="reset" value="1" class="btn-link" formnovalidate>Use the standard text</button><?php endif; ?>
+          <span class="quiet" data-intro-status aria-live="polite"></span>
+        </div>
+        <audio controls hidden data-intro-audio></audio>
+      </form>
+    </section>
+
     <section class="card" aria-labelledby="h-life" style="border-color: <?= $archived ? 'var(--rule)' : '#F1D5D7' ?>">
       <h2 id="h-life">Archive or delete</h2>
       <?php if (!$archived): ?>
@@ -101,4 +127,30 @@ require APP_ROOT . '/app/Views/layout-top.php';
 </div>
 <div class="toast-region" aria-live="polite" aria-atomic="true" data-project-toast></div>
 <?php if (!$archived): ?><script src="<?= e(base_url('assets/js/phase2c4.js')) ?>" defer></script><?php endif; ?>
+<script>
+(function () {
+  const btn = document.querySelector('[data-intro-hear]');
+  if (!btn) return;
+  const form = btn.closest('form');
+  const status = form.querySelector('[data-intro-status]');
+  const audio = form.querySelector('[data-intro-audio]');
+  btn.addEventListener('click', async () => {
+    const text = form.elements.text.value.replace(/\s*\n\s*/g, ' ').trim();
+    if (!text) { status.textContent = 'Write the introduction first.'; return; }
+    btn.disabled = true;
+    status.textContent = 'Making a sample…';
+    try {
+      const r = await fetch(btn.dataset.endpoint, {method: 'POST', credentials: 'same-origin', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({_token: btn.dataset.token, text, voice: btn.dataset.voice, speed: Number(btn.dataset.speed), apply_pronunciation: true, project_id: btn.dataset.project})});
+      if (!r.ok) { const x = await r.json().catch(() => ({})); throw new Error(x.message || 'The voice server did not answer.'); }
+      if (audio.dataset.url) URL.revokeObjectURL(audio.dataset.url);
+      audio.dataset.url = URL.createObjectURL(await r.blob());
+      audio.src = audio.dataset.url;
+      audio.hidden = false;
+      audio.play().catch(() => {});
+      status.textContent = '';
+    } catch (error) { status.textContent = error.message; } finally { btn.disabled = false; }
+  });
+})();
+</script>
 <?php require APP_ROOT . '/app/Views/layout-bottom.php'; ?>

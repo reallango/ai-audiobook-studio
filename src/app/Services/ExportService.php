@@ -11,9 +11,10 @@ use ZipArchive;
 /** Whole-book output: a chaptered m4b built from the finished chapter m4a files, or a ZIP of those files. */
 final class ExportService
 {
-    public function __construct(private ?AudioEncoder $encoder = null)
+    public function __construct(private ?AudioEncoder $encoder = null, private ?IntroService $intro = null)
     {
         $this->encoder ??= new AudioEncoder();
+        $this->intro ??= new IntroService();
     }
 
     /**
@@ -56,6 +57,12 @@ final class ExportService
     {
         $row ??= $this->exportRow($projectId);
         $ready ??= $this->readyChapters($projectId);
+        // an introduction the file should open with counts too (by what it must be, whether or not its audio exists yet)
+        $intro = $this->intro->signature($projectId);
+        if ($intro !== '' && $ready !== []) {
+            $project = $this->project($projectId);
+            array_unshift($ready, ['id' => 'intro', 'signature' => $intro, 'bitrate_kbps' => (int) $project['audio_bitrate_kbps']]);
+        }
         return $row !== null && $ready !== [] && $row['signature'] === self::signature($ready) && is_file($this->absolute((string) $row['relpath']));
     }
 
@@ -64,6 +71,8 @@ final class ExportService
     {
         $ready = $this->readyChapters($projectId);
         if ($ready === []) throw new InvalidArgumentException('No chapter has finished audio yet.');
+        $intro = $this->intro->ready($projectId);
+        if ($intro !== null) array_unshift($ready, $intro);
         $project = $this->project($projectId);
         $tags = ['title' => (string) $project['title'], 'album' => (string) $project['title'], 'artist' => (string) ($project['author'] ?? ''), 'genre' => 'Audiobook'];
 
@@ -114,13 +123,15 @@ final class ExportService
     {
         $ready = $this->readyChapters($projectId);
         if ($ready === []) throw new InvalidArgumentException('No chapter has finished audio yet.');
+        $intro = $this->intro->ready($projectId);
+        if ($intro !== null) array_unshift($ready, $intro);
         $tmpDir = $this->absolute('../tmp');
         if (!is_dir($tmpDir) && !mkdir($tmpDir, 0775, true) && !is_dir($tmpDir)) $tmpDir = sys_get_temp_dir();
         $zipPath = tempnam($tmpDir, 'zip');
         $zip = new ZipArchive();
         if ($zip->open($zipPath, ZipArchive::OVERWRITE) !== true) throw new RuntimeException('Cannot create the ZIP file.');
         foreach ($ready as $index => $chapter) {
-            $name = str_pad((string) ($index + 1), 3, '0', STR_PAD_LEFT) . ' - ' . trim((string) preg_replace('/[^A-Za-z0-9 ._-]+/', '', $chapter['title'])) . '.m4a';
+            $name = str_pad((string) ($intro !== null ? $index : $index + 1), 3, '0', STR_PAD_LEFT) . ' - ' . trim((string) preg_replace('/[^A-Za-z0-9 ._-]+/', '', $chapter['title'])) . '.m4a';
             $zip->addFile($chapter['path'], $name);
             $zip->setCompressionName($name, ZipArchive::CM_STORE);
         }
