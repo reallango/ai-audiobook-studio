@@ -113,6 +113,27 @@ check('a regex finds sentences by pattern', $narr->exampleSentences('p', '\bSisk
 check('a broken or empty-matching regex finds nothing', [$narr->exampleSentences('p', '(oops', true, false, 60, 'regex'), $narr->exampleSentences('p', 'x*', true, false, 60, 'regex')], [[], []]);
 check('match type word overrides the whole flag', $narr->exampleSentences('p', 'os', false, false, 60, 'word'), ['The OS was down.', "Sisko's os stayed on."]);
 
+// editing words that were added by an earlier edit, or that come from a rule
+$pdo->exec("INSERT INTO source_sections(id,project_id,source_asset_id,spine_index,manifest_id,href,raw_sha256) VALUES('s9','p','a',9,'c9','c9.xhtml','h')");
+$pdo->prepare('INSERT INTO source_blocks(id,project_id,source_section_id,block_index,block_type,source_text,source_sha256,dom_path) VALUES(?,?,?,?,?,?,?,?)')
+    ->execute(['b9', 'p', 's9', 0, 'p', 'Kira walked to the door of the Kalandra.', 'h', '/']);
+$pdo->exec("INSERT INTO logical_sections(id,project_id,position,title,included) VALUES('L9','p',9,'Chapter 9',1)");
+$pdo->exec("INSERT INTO logical_section_sources(logical_section_id,source_section_id,source_order) VALUES('L9','s9',0)");
+$pron->save('project', 'p', 'Kalandra', 'Ka lan dra');
+$nine = fn (): string => $narr->chapter('p', 'L9')['items'][0]['narration'];
+$type = fn (string $t): string => ($narr->saveParagraphText('p', 'L9', 'b9', $t) ?? '') . $nine();
+check('adding a word', $type('Kira walked slowly to the door of the Ka lan dra.'), 'Kira walked slowly to the door of the Ka lan dra.');
+check('removing the added word again leaves the original', $type('Kira walked to the door of the Ka lan dra.'), 'Kira walked to the door of the Ka lan dra.');
+$type('Kira walked slowly to the door of the Ka lan dra.');
+check('changing an added word replaces it with a space kept', $type('Kira walked quickly to the door of the Ka lan dra.'), 'Kira walked quickly to the door of the Ka lan dra.');
+check('adding a word after an added word keeps both', $type('Kira walked quickly home to the door of the Ka lan dra.'), 'Kira walked quickly home to the door of the Ka lan dra.');
+check('a word added at the start can be changed', [$type('And then Kira walked quickly home to the door of the Ka lan dra.'), $type('So Kira walked quickly home to the door of the Ka lan dra.')],
+    ['And then Kira walked quickly home to the door of the Ka lan dra.', 'So Kira walked quickly home to the door of the Ka lan dra.']);
+check('editing one word of a rule\'s spoken form keeps the rest', $type('So Kira walked quickly home to the door of the Ka lan draa.'), 'So Kira walked quickly home to the door of the Ka lan draa.');
+check('typing the original word back over a rule keeps that choice', $type('So Kira walked quickly home to the door of the Kalandra.'), 'So Kira walked quickly home to the door of the Kalandra.');
+check('deleting a word of the source', $type('So Kira walked quickly home to the door of Kalandra.'), 'So Kira walked quickly home to the door of Kalandra.');
+check('and every edit is still anchored to the source', count($narr->chapter('p', 'L9')['items'][0]['edits']) > 0 && $narr->chapter('p', 'L9')['items'][0]['stale'] === 0, true);
+
 @unlink($db);
 echo $failures === 0 ? "\nall passed\n" : "\n$failures failed\n";
 exit($failures === 0 ? 0 : 1);
