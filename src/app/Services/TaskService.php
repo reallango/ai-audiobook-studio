@@ -14,19 +14,20 @@ use Throwable;
  */
 final class TaskService
 {
-    public const KINDS = ['m4b' => 'Building the chaptered M4B'];
+    public const KINDS = ['m4b' => 'Building the chaptered M4B', 'pron_check' => 'Checking pronunciations online'];
     /** A running task with no sign of life for this long is taken as abandoned (the worker was restarted). */
     private const STALE_SECONDS = 3600;
 
     /** Queues a build. Returns the one already waiting or running when there is one. @return array<string,mixed> */
-    public function enqueue(string $projectId, string $kind = 'm4b'): array
+    /** @param array<string,mixed> $params settings for the task (stored as JSON) */
+    public function enqueue(string $projectId, string $kind = 'm4b', array $params = []): array
     {
         if (!isset(self::KINDS[$kind])) throw new InvalidArgumentException('Unknown task.');
         if ($kind === 'm4b' && (new ExportService())->readyChapters($projectId) === []) throw new InvalidArgumentException('No chapter has finished audio yet.');
         $open = $this->open($projectId, $kind);
         if ($open !== null) return $open;
         $id = self::uuid();
-        $this->db()->prepare("INSERT INTO background_tasks(id,project_id,kind,status) VALUES(:id,:p,:k,'QUEUED')")->execute(['id' => $id, 'p' => $projectId, 'k' => $kind]);
+        $this->db()->prepare("INSERT INTO background_tasks(id,project_id,kind,status,params) VALUES(:id,:p,:k,'QUEUED',:params)")->execute(['id' => $id, 'p' => $projectId, 'k' => $kind, 'params' => $params === [] ? '' : json_encode($params)]);
         return $this->find($id) ?? throw new \RuntimeException('The task could not be queued.');
     }
 
@@ -39,6 +40,14 @@ final class TaskService
             if ($task['kind'] === 'm4b') {
                 $built = (new ExportService())->buildM4b((string) $task['project_id']);
                 $this->finish($task, 'DONE', 'Built with ' . (int) $built['chapter_count'] . ' chapter markers.');
+            } elseif ($task['kind'] === 'pron_check') {
+                $params = json_decode((string) ($task['params'] ?? ''), true) ?: [];
+                $result = (new PronCheckService())->run((string) $task['project_id'], $params, function (int $done, int $total) use ($task): void {
+                    // progress shows in the Activity list; the heartbeat keeps a long check from looking abandoned
+                    $this->db()->prepare('UPDATE background_tasks SET message=:m, heartbeat_at=CURRENT_TIMESTAMP WHERE id=:id')->execute(['m' => "$done of $total words", 'id' => $task['id']]);
+                    self::beat();
+                });
+                $this->finish($task, 'DONE', $result['checked'] === 0 ? 'No new words to check.' : "Checked {$result['checked']} words; found {$result['found']}.");
             } else {
                 $this->finish($task, 'FAILED', 'Unknown task.');
             }
@@ -152,7 +161,7 @@ final class TaskService
         $db = $this->db();
         // A build waits only for its own book's chapter audio (so it includes the chapters still being made), never for another book's.
         $s = $db->prepare("SELECT * FROM background_tasks t WHERE (t.status='QUEUED' OR (t.status='RUNNING' AND t.heartbeat_at < datetime('now', :stale)))
-             AND NOT EXISTS (SELECT 1 FROM generation_jobs g WHERE g.project_id=t.project_id AND g.status IN ('QUEUED','RUNNING')) ORDER BY t.requested_at LIMIT 1");
+             AND (t.kind <> 'm4b' OR NOT EXISTS (SELECT 1 FROM generation_jobs g WHERE g.project_id=t.project_id AND g.status IN ('QUEUED','RUNNING'))) ORDER BY t.requested_at LIMIT 1");
         $s->execute(['stale' => '-' . self::STALE_SECONDS . ' seconds']);
         $task = $s->fetch();
         if (!$task) return null;

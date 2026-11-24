@@ -1,0 +1,111 @@
+<?php
+declare(strict_types=1);
+
+// php tests/pron_check_test.php  (no network: Wiktionary and Wikipedia are faked; throwaway database)
+$db = sys_get_temp_dir() . '/audiobook-test-' . bin2hex(random_bytes(4)) . '.sqlite';
+putenv('AI_AUDIOBOOK_DB_PATH=' . $db);
+require dirname(__DIR__) . '/src/app/bootstrap.php';
+
+use App\Core\Database;
+use App\Services\IpaConverter;
+use App\Services\PronCheckService;
+use App\Services\PronLookup;
+use App\Services\PronunciationService;
+use App\Services\TaskService;
+
+$failures = 0;
+function check(string $name, mixed $actual, mixed $expected): void
+{
+    global $failures;
+    if ($actual === $expected) { echo "ok   $name\n"; return; }
+    $failures++;
+    echo "FAIL $name\n  expected: " . var_export($expected, true) . "\n  actual:   " . var_export($actual, true) . "\n";
+}
+
+// ----- converting pronunciations -----
+check('IPA to the voice\'s sounds', [IpaConverter::toKokoro('/ˈhætəɹəs/'), IpaConverter::toKokoro('maˈtansas'), IpaConverter::toKokoro('[ma.leˈkon]'), IpaConverter::toKokoro('/ˈoʊdoʊ/')],
+    ['ˈhætəɹəs', 'mɑˈtɑnsɑs', 'mɑlAˈkOn', 'ˈOdO']);
+check('sounds English lacks become the nearest English ones', IpaConverter::toKokoro('sjeɱˈfweɣos'), 'sjAmˈfwAɡOs');
+check('Wikipedia\'s IPAc-en codes', IpaConverter::fromIpacEn(['b', '@', "'", 'dZ', 'oʊr', '@', 'n', 'US', 'lang=x']), 'bəˈdʒoʊrən');
+check('readable respellings, stressed syllable in capitals', [IpaConverter::respell('həbˈɑnə'), IpaConverter::respell('ˈhætəɹəs'), IpaConverter::respell('mɑˈtɑnsɑs')], ['huh-BAH-nuh', 'HA-tuh-ruhs', 'mah-TAHN-sahs']);
+check('the spoken form of a rule carries the exact sounds', IpaConverter::markup('Habana', 'həbˈɑnə'), '[Habana](/həbˈɑnə/)');
+check('nothing usable gives nothing', IpaConverter::toKokoro('/ʔ/'), '');
+
+// ----- parsing the sources -----
+check('Wiktionary: the English pronunciation first', PronLookup::ipaFromWiktionary("==Spanish==\n{{IPA|es|/oˈla/}}\n==English==\n* {{IPA|en|/ˈhætəɹəs/|/x/}}"), ['/ˈhætəɹəs/', 'en']);
+check('Wiktionary: another language when that is all there is', PronLookup::ipaFromWiktionary('{{IPA|es|[maˈtansas]}}'), ['[maˈtansas]', 'es']);
+check('Wikipedia: IPAc-en, then a foreign IPA', [PronLookup::ipaFromWikipedia("'''Havana''' ({{IPAc-en|h|ə|ˈ|v|æ|n|ə}}; Spanish: {{IPA|es|aˈβana|lang}})"), PronLookup::ipaFromWikipedia('({{IPA|es-419|maˈtansas|lang}})')],
+    [['həˈvænə', 'en'], ['maˈtansas', 'es']]);
+check('disambiguation pages are skipped', [PronLookup::isDisambiguation("'''Quark''' may refer to:"), PronLookup::isDisambiguation('{{disambiguation}}'), PronLookup::isDisambiguation('A city.')], [true, true, false]);
+
+// ----- looking words up (fake Wikimedia) -----
+$requests = [];
+$pages = [
+    'wiktionary|Hatteras' => ['parse' => ['wikitext' => ['*' => "==English==\n{{IPA|en|/ˈhætəɹəs/}}"]]],
+    'wikipedia|Matanzas' => ['query' => ['pages' => ['1' => ['title' => 'Matanzas', 'revisions' => [['slots' => ['main' => ['*' => "'''Matanzas''' ({{IPA|es-419|maˈtansas|lang}}) is a city"]]]]]]]],
+    'wikipedia|Habana' => ['query' => ['pages' => ['2' => ['title' => 'Havana', 'revisions' => [['slots' => ['main' => ['*' => "'''Havana''' ({{IPAc-en|h|ə|ˈ|v|æ|n|ə}})"]]]]]]]],
+    'search|Odo' => ['query' => ['search' => [['title' => 'Odo (Star Trek)']]]],
+    'wikipedia|Odo (Star Trek)' => ['query' => ['pages' => ['3' => ['title' => 'Odo (Star Trek)', 'revisions' => [['slots' => ['main' => ['*' => "'''Odo''' ({{IPAc-en|ˈ|oʊ|d|oʊ}}) is a character"]]]]]]]],
+];
+$fake = function (string $url) use (&$requests, $pages): array {
+    $requests[] = $url;
+    parse_str((string) parse_url($url, PHP_URL_QUERY), $q);
+    $site = str_contains($url, 'wiktionary') ? 'wiktionary' : (($q['list'] ?? '') === 'search' ? 'search' : 'wikipedia');
+    $name = $site === 'wiktionary' ? ($q['page'] ?? '') : ($site === 'search' ? explode(' ', (string) ($q['srsearch'] ?? ''))[0] : ($q['titles'] ?? ''));
+    if (str_contains((string) $name, 'Busy')) return ['status' => 429, 'body' => ''];
+    $body = $pages[$site . '|' . $name] ?? ($site === 'wiktionary' ? ['error' => ['code' => 'missingtitle']] : ($site === 'search' ? ['query' => ['search' => []]] : ['query' => ['pages' => ['-1' => ['missing' => '']]]]));
+    return ['status' => 200, 'body' => json_encode($body)];
+};
+$lookup = new PronLookup($fake, 0.0, 0);
+$h = $lookup->find('Hatteras', 'My Book');
+check('Wiktionary answer, English, on the word\'s own page: high', [$h['status'], $h['confidence'], $h['ipa']], ['found', 'high', '/ˈhætəɹəs/']);
+$m = $lookup->find('Matanzas', 'My Book');
+check('Wikipedia, another language: medium', [$m['confidence'], $m['lang']], ['medium', 'es']);
+$hv = $lookup->find('Habana', 'My Book');
+check('a redirect to another spelling is medium, with a note', [$hv['confidence'], str_contains($hv['note'], 'Havana')], ['medium', true]);
+$o = $lookup->find('Odo', 'Star Trek');
+check('found by search with the book\'s title: medium', [$o['status'], $o['confidence'], $o['source_title']], ['found', 'medium', 'Wikipedia: Odo (Star Trek)']);
+check('nothing anywhere', $lookup->find('Sisko', 'Star Trek')['status'], 'none');
+$before = count($requests);
+$lookup->find('Hatteras', 'My Book');
+check('an answer is looked up once, then remembered', count($requests), $before);
+$threw = '';
+try { $lookup->find('Busyword', 'x'); } catch (RuntimeException $e) { $threw = $e->getMessage(); }
+check('"too many requests" is reported, and not remembered as "none"', [str_contains($threw, 'too many requests'), Database::connection()->query("SELECT COUNT(*) FROM pron_lookup_cache WHERE cache_key LIKE 'v1|busyword%'")->fetchColumn()], [true, 0]);
+
+// ----- checking a book -----
+$pdo = Database::connection();
+$pdo->exec("INSERT INTO projects(id,slug,title,active_voice_profile_id) VALUES('p','p','My Book','am_michael')");
+$pdo->exec("INSERT INTO source_assets(id,project_id,original_name,stored_relpath,sha256,byte_size) VALUES('a','p','b.epub','x','h',1)");
+$pdo->exec("INSERT INTO source_sections(id,project_id,source_asset_id,spine_index,manifest_id,href,raw_sha256) VALUES('s1','p','a',1,'c1','c1.xhtml','h')");
+$pdo->prepare('INSERT INTO source_blocks(id,project_id,source_section_id,block_index,block_type,source_text,source_sha256,dom_path) VALUES(?,?,?,?,?,?,?,?)')
+    ->execute(['b1', 'p', 's1', 0, 'p', 'They sailed from Hatteras to Matanzas, where Odo and Sisko waited. Then Matanzas again, and Habana.', 'h', '/']);
+$pdo->exec("INSERT INTO logical_sections(id,project_id,position,title,included) VALUES('L','p',1,'Chapter 1',1)");
+$pdo->exec("INSERT INTO logical_section_sources(logical_section_id,source_section_id,source_order) VALUES('L','s1',0)");
+$svc = new PronCheckService($lookup);
+$words = array_column($svc->words('p', ['proper']), 'text');
+check('the words to check are the flagged names, most frequent first', [$words[0], in_array('Sisko', $words, true), in_array('They', $words, true)], ['Matanzas', true, false]);
+$progress = [];
+$result = $svc->run('p', ['kinds' => ['proper']], function (int $d, int $t) use (&$progress): void { $progress[] = "$d/$t"; });
+check('the run reports progress and what it found', [$result['found'] >= 3, end($progress) === count($words) . '/' . count($words)], [true, true]);
+$res = $svc->results('p');
+check('found and not-found lists', [in_array('Sisko', array_column($res['missing'], 'word'), true), array_column($res['found'], 'word')[0]], [true, 'Hatteras']);
+check('a result carries the rule\'s spoken form and a readable respelling', [$res['found'][0]['spoken'], $res['found'][0]['respelling']], ['[Hatteras](/ˈhætəɹəs/)', 'HA-tuh-ruhs']);
+$svc->makeRule('p', 'Matanzas');
+$rule = array_values(array_filter((new PronunciationService())->rules('project', 'p'), static fn (array $r): bool => $r['pattern'] === 'Matanzas'))[0] ?? [];
+check('making a rule stores the exact sounds and where they came from', [$rule['replacement'] ?? '', str_contains((string) ($rule['note'] ?? ''), 'Wikipedia: Matanzas')], ['[Matanzas](/mɑˈtɑnsɑs/)', true]);
+check('a word with a rule leaves the results', in_array('Matanzas', array_column($svc->results('p')['found'], 'word'), true), false);
+check('the rule is read with the sounds', (new PronunciationService())->apply('to Matanzas.', (new PronunciationService())->effective('p', 'am_michael'), false)['text'], 'to [Matanzas](/mɑˈtɑnsɑs/).');
+check('make all high-confidence rules', [$svc->makeRules('p', 'high'), in_array('Hatteras', array_column((new PronunciationService())->rules('project', 'p'), 'pattern'), true)], [1, true]);
+$svc->dismiss('p', 'Sisko');
+check('a dismissed word leaves the list', in_array('Sisko', array_column($svc->results('p')['missing'], 'word'), true), false);
+check('checked words are not checked again unless asked', [count($svc->words('p', ['proper'])), count($svc->words('p', ['proper'], true)) > 0], [0, true]);
+
+// ----- as a background task -----
+$task = $svc->start('p', ['proper'], true);
+check('a check is queued as a background task with its settings', [$task['kind'], json_decode((string) $task['params'], true)['kinds']], ['pron_check', ['proper']]);
+check('it does not wait for chapter audio', (new TaskService())->isBusy('p', 'pron_check'), true);
+
+@unlink($db);
+echo $failures === 0 ? "\nall passed\n" : "\n$failures failed\n";
+exit($failures === 0 ? 0 : 1);

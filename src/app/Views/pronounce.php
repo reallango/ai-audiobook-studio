@@ -126,6 +126,76 @@ $fromTag = static function (array $r): array {
   <?php endif; ?>
 
   <?php if ($tab === 'suggestions'): ?>
+    <?php $found = $checkResults['found']; $missing = $checkResults['missing']; ?>
+    <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 14px">
+      <nav class="segmented" aria-label="Suggestions" style="min-width: 320px">
+        <a href="<?= e($tabUrl('suggestions')) ?>" <?= !$online ? 'aria-current="page"' : '' ?>>From the text</a>
+        <a href="<?= e($tabUrl('suggestions', ['view' => 'online'])) ?>" <?= $online ? 'aria-current="page"' : '' ?>>Checked online<?= $found || $missing ? ' (' . (count($found) + count($missing)) . ')' : '' ?></a>
+      </nav>
+      <?php if (!$archived): ?>
+        <form method="post" action="<?= e(base_url('pron-check')) ?>" style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-left: auto">
+          <?= csrf_field() ?><input type="hidden" name="id" value="<?= e($pid) ?>"><input type="hidden" name="action" value="start">
+          <input type="hidden" name="kinds[]" value="proper"><input type="hidden" name="kinds[]" value="odd">
+          <?php if ($found || $missing): ?><label class="quiet" style="display: flex; gap: 6px; align-items: center"><input type="checkbox" name="recheck" value="1"> check the old ones again</label><?php endif; ?>
+          <button type="submit" <?= $checkRunning ? 'disabled' : '' ?> title="Looks up names and odd spellings on Wiktionary and Wikipedia, about one word a second, in the background"><?= $checkRunning ? 'Checking online…' : 'Check pronunciations online' ?></button>
+        </form>
+      <?php endif; ?>
+    </div>
+  <?php endif; ?>
+
+  <?php if ($tab === 'suggestions' && $online): ?>
+    <?php if ($checkRunning): ?><p class="notice" style="margin: 0 0 14px">Checking now. The Activity button shows how far it is; refresh this page for the results so far.</p><?php endif; ?>
+    <?php if (!$found && !$missing && !$checkRunning): ?>
+      <p class="card muted">Nothing checked yet. “Check pronunciations online” looks up this book's names and odd spellings on Wiktionary and Wikipedia (using the book's title to find the right page), and suggests a rule for each one it finds.</p>
+    <?php endif; ?>
+    <?php if ($found): $high = count(array_filter($found, static fn (array $r): bool => $r['confidence'] === 'high')); ?>
+      <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin: 4px 0 10px">
+        <h2 style="font-size: 16px">Suggested rules <span class="count quiet"><?= count($found) ?></span></h2>
+        <?php if (!$archived && $high > 0): ?>
+          <form method="post" action="<?= e(base_url('pron-check')) ?>" onsubmit="return confirm('Make <?= $high ?> rule<?= $high === 1 ? '' : 's' ?> from the high-confidence results?');">
+            <?= csrf_field() ?><input type="hidden" name="id" value="<?= e($pid) ?>"><input type="hidden" name="action" value="make_all"><input type="hidden" name="confidence" value="high">
+            <button type="submit" class="btn-dark btn-sm">Make all <?= $high ?> high-confidence rules</button></form>
+        <?php endif; ?>
+      </div>
+      <p class="quiet" style="margin: 0 0 10px">Each rule tells the voice the exact sounds found online. Try one before making it: a source can be about something else with the same name.</p>
+      <div class="table-box">
+        <table class="table">
+          <thead><tr><th>Word</th><th>Sounds like</th><th>Confidence</th><th>Source</th><th><span class="visually-hidden">Actions</span></th></tr></thead>
+          <tbody>
+          <?php foreach ($found as $r): $tone = ['high' => 'green', 'medium' => 'amber', 'low' => 'red'][$r['confidence']] ?? ''; ?>
+            <tr>
+              <td><strong><?= e((string) $r['word']) ?></strong></td>
+              <td><?= e((string) $r['respelling']) ?><br><span class="quiet" style="font-family: var(--serif)">/<?= e((string) $r['ipa'] !== '' ? trim((string) $r['ipa'], '/[]') : (string) $r['sounds']) ?>/<?= $r['lang'] !== '' && $r['lang'] !== 'en' ? ' · ' . e(strtoupper((string) $r['lang'])) . ' pronunciation' : '' ?></span></td>
+              <td><span class="tag <?= $tone ?>"><?= e(ucfirst((string) $r['confidence'])) ?></span></td>
+              <td><a href="<?= e((string) $r['source_url']) ?>" target="_blank" rel="noopener noreferrer"><?= e((string) $r['source_title']) ?></a><?= $r['note'] !== '' ? '<br><span class="quiet">' . e((string) $r['note']) . '</span>' : '' ?></td>
+              <td style="text-align: right; white-space: nowrap">
+                <button type="button" class="btn-soft btn-sm" data-wb-load data-written="<?= e((string) $r['word']) ?>" data-spoken="<?= e((string) $r['spoken']) ?>" data-layer="project|<?= e($pid) ?>" data-label="found online: <?= e((string) $r['respelling']) ?>" data-case="1" data-whole="1">Try</button>
+                <?php if (!$archived): ?>
+                  <form method="post" action="<?= e(base_url('pron-check')) ?>" style="display: inline"><?= csrf_field() ?><input type="hidden" name="id" value="<?= e($pid) ?>"><input type="hidden" name="action" value="make"><input type="hidden" name="word" value="<?= e((string) $r['word']) ?>"><button type="submit" class="btn-sm">Make rule</button></form>
+                  <form method="post" action="<?= e(base_url('pron-check')) ?>" style="display: inline"><?= csrf_field() ?><input type="hidden" name="id" value="<?= e($pid) ?>"><input type="hidden" name="action" value="dismiss"><input type="hidden" name="word" value="<?= e((string) $r['word']) ?>"><button type="submit" class="btn-link" style="font-size: 13px">Dismiss</button></form>
+                <?php endif; ?>
+              </td>
+            </tr>
+          <?php endforeach; ?>
+          </tbody>
+        </table>
+      </div>
+    <?php endif; ?>
+    <?php if ($missing): ?>
+      <h2 style="font-size: 16px; margin: 22px 0 6px">Couldn't find <span class="count quiet"><?= count($missing) ?></span></h2>
+      <p class="quiet" style="margin: 0 0 10px">No pronunciation was found online for these. Use Try to hear how the voice reads them, and change the spoken form until it sounds right.</p>
+      <div class="chips">
+        <?php foreach ($missing as $r): ?>
+          <span style="display: inline-flex; gap: 2px; align-items: center">
+            <button type="button" class="chip" data-wb-load data-written="<?= e((string) $r['word']) ?>" data-spoken="<?= e((string) $r['word']) ?>" data-layer="project|<?= e($pid) ?>" data-label="not found online" data-case="1" data-whole="1"><?= e((string) $r['word']) ?></button>
+            <?php if (!$archived): ?><form method="post" action="<?= e(base_url('pron-check')) ?>" style="display: inline"><?= csrf_field() ?><input type="hidden" name="id" value="<?= e($pid) ?>"><input type="hidden" name="action" value="dismiss"><input type="hidden" name="word" value="<?= e((string) $r['word']) ?>"><button type="submit" class="btn-link" aria-label="Dismiss <?= e((string) $r['word']) ?>" title="Dismiss" style="font-size: 13px; padding: 0 4px">×</button></form><?php endif; ?>
+          </span>
+        <?php endforeach; ?>
+      </div>
+    <?php endif; ?>
+  <?php endif; ?>
+
+  <?php if ($tab === 'suggestions' && !$online): ?>
     <p class="muted" style="margin: 0 0 12px">Words in this book a voice may read badly. Nothing changes until you make a rule; anything a rule already covers is left out.</p>
     <div class="chips" role="group" aria-label="Kind" style="margin-bottom: 12px">
       <?php foreach (TextCheckService::KINDS as $k => [$label]): ?>

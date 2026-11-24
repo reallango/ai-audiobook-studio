@@ -99,7 +99,7 @@
     const sub = [];
     if (showBook || i.kind !== 'chapter') sub.push(i.book);
     if (i.kind === 'chapter' && i.total > 0 && i.status === 'RUNNING') sub.push('part ' + i.done + ' of ' + i.total);
-    if (i.message && i.status !== 'RUNNING') sub.push(i.message);
+    if (i.message && (i.status !== 'RUNNING' || i.kind !== 'chapter')) sub.push(i.message);   // a task's progress, or how it ended
     if (sub.length) li.append(el('div', 'act-sub', sub.join(' · ')));
     if (i.kind === 'chapter' && i.total > 0 && i.status === 'RUNNING') {
       const bar = el('div', 'act-bar');

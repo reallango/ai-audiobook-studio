@@ -49,6 +49,11 @@ $renderPieces = static function (array $item): string {
         $layer = $p['kind'] === 'rule' && $p['scope'] !== '' ? $p['scope'] . '|' . $p['scope_ref'] : '';
         $title = (string) $p['src'] . ' → ' . ((string) $p['out'] === '' ? '(removed)' : (string) $p['out']) . ' · ' . $label;
         $inner = (string) $p['out'] === '' ? '<s>' . e((string) $p['src']) . '</s>' : e((string) $p['out']);
+        // a rule with exact sounds, [Habana](/həbˈɑnə/), shows the word; the sounds are in the tooltip
+        if (preg_match('#^\[([^\]]+)\]\(/([^/]+)/\)(.*)$#su', (string) $p['out'], $mk) === 1) {
+            $inner = e($mk[1] . $mk[3]);
+            $title = (string) $p['src'] . ' → sounds /' . $mk[2] . '/' . ' · ' . $label;
+        }
         $html .= '<mark class="chg ' . e((string) $p['kind']) . ((string) $p['out'] === '' ? ' removed' : '') . '" tabindex="0" data-kind="' . e((string) $p['kind']) . '" data-src="' . e((string) $p['src'])
             . '" data-out="' . e((string) $p['out']) . '" data-layer="' . e($layer) . '" data-label="' . e($label) . '" title="' . e($title) . '">' . $inner . '</mark>';
     }
