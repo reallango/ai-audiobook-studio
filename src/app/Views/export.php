@@ -49,7 +49,7 @@ $build = static fn (string $label, string $class = ''): string => '<form method=
             <?php endif; ?>
             <?php if ($missing > 0 && $ready > 0 && $state !== 'building'): ?><br><?= $missing ?> chapter<?= $missing === 1 ? ' has' : 's have' ?> no finished audio yet and will be left out.<?php endif; ?>
           </p>
-          <p class="quiet" style="margin: 0"><?php if ((int) ($project['intro_enabled'] ?? 0) === 1): ?>Opens with the spoken introduction. <?php else: ?>No spoken introduction. <?php endif; ?><a href="<?= e(base_url('project', ['id' => $pid]) . '#intro') ?>">Change it</a></p>
+          <p class="quiet" style="margin: 0"><?php if ((int) ($project['intro_enabled'] ?? 0) === 1): ?>Opens with the spoken title. <?php else: ?>No spoken title. <?php endif; ?><a href="<?= e(base_url('project', ['id' => $pid]) . '#intro') ?>">Change it</a></p>
           <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap">
             <?php if ($state === 'current'): ?>
               <a class="btn" href="<?= e(base_url('export', ['id' => $pid, 'kind' => 'm4b'])) ?>">Download the audiobook</a>

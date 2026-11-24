@@ -240,7 +240,7 @@ final class App
         ]);
     }
 
-    /** POST from Settings: switch the spoken introduction on or off and keep its text. */
+    /** POST from Settings: switch the spoken title on or off and keep its text. */
     private static function introSettings():void
     {
         self::requirePost();
@@ -251,7 +251,7 @@ final class App
             if (($project['status'] ?? '') === 'ARCHIVED') throw new \InvalidArgumentException('Restore the book before changing it.');
             $reset = ($_POST['reset'] ?? '') === '1';
             (new \App\Services\IntroService())->save($id, ($_POST['enabled'] ?? '') === '1', $reset ? '' : (string) ($_POST['text'] ?? ''));
-            self::flash('success', $reset ? 'The introduction is back to the standard text.' : (($_POST['enabled'] ?? '') === '1' ? 'Introduction saved. It goes in the next time the audiobook is built.' : 'Introduction switched off.'));
+            self::flash('success', $reset ? 'The spoken title is back to the standard text.' : (($_POST['enabled'] ?? '') === '1' ? 'Spoken title saved. It goes in the next time the audiobook is built.' : 'Spoken title switched off.'));
         } catch (Throwable $error) {
             self::flash('error', self::userMessage($error));
         }

@@ -9,13 +9,13 @@ use PDO;
 use RuntimeException;
 
 /**
- * The optional spoken introduction at the start of an audiobook: the title and author, a line saying it was made with
+ * The optional spoken title at the start of an audiobook (the chapter is called "Title", since many books have their own introduction): the title and author, a line saying it was made with
  * AI Audiobook Studio on the voice service and voice in use, and that it is for personal use only. Its audio is made
  * once for a given text, voice, speed and quality, and becomes the first chapter of the M4B and the first file of the ZIP.
  */
 final class IntroService
 {
-    public const TITLE = 'Introduction';
+    public const TITLE = 'Title';            // not 'Introduction': many books have their own
     public const MAX_CHARS = 1200;
 
     /** @var null|callable(string,string,float):string */

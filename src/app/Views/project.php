@@ -87,11 +87,11 @@ require APP_ROOT . '/app/Views/layout-top.php';
       $introText = trim((string) ($project['intro_text'] ?? '')) !== '' ? (string) $project['intro_text'] : $standard;
     ?>
     <section class="card" id="intro" aria-labelledby="h-intro">
-      <h2 id="h-intro">Spoken introduction</h2>
-      <p class="muted" style="margin: 6px 0 12px">Read before the first chapter: the title and author, how the audiobook was made, and that it is for personal use only. It goes in the audiobook file and the ZIP as “Introduction”.</p>
+      <h2 id="h-intro">Spoken title</h2>
+      <p class="muted" style="margin: 6px 0 12px">Read before the first chapter: the title and author, how the audiobook was made, and that it is for personal use only. It goes first in the audiobook file and the ZIP, as a chapter called “Title”, so it never mixes up with an introduction the book has itself.</p>
       <form method="post" action="<?= e(base_url('intro-settings')) ?>" style="display: grid; gap: 12px" data-intro>
         <?= csrf_field() ?><input type="hidden" name="id" value="<?= e($pid) ?>">
-        <label style="display: flex; gap: 10px; align-items: center; font-size: 14px"><input type="checkbox" name="enabled" value="1" <?= $introOn ? 'checked' : '' ?> <?= $archived ? 'disabled' : '' ?>> Start the audiobook with this introduction</label>
+        <label style="display: flex; gap: 10px; align-items: center; font-size: 14px"><input type="checkbox" name="enabled" value="1" <?= $introOn ? 'checked' : '' ?> <?= $archived ? 'disabled' : '' ?>> Start the audiobook with this spoken title</label>
         <label style="display: grid; gap: 4px; font-weight: 600; font-size: 14px">What is read
           <textarea name="text" rows="4" maxlength="<?= \App\Services\IntroService::MAX_CHARS ?>" style="font-family: var(--serif); font-size: 16px; line-height: 1.55" <?= $archived ? 'disabled' : '' ?>><?= e($introText) ?></textarea>
           <span class="quiet" style="font-weight: 400">The standard text follows the book's title, author and voice when they change. Edited text stays as you wrote it. The book's pronunciation rules apply.</span></label>
@@ -136,7 +136,7 @@ require APP_ROOT . '/app/Views/layout-top.php';
   const audio = form.querySelector('[data-intro-audio]');
   btn.addEventListener('click', async () => {
     const text = form.elements.text.value.replace(/\s*\n\s*/g, ' ').trim();
-    if (!text) { status.textContent = 'Write the introduction first.'; return; }
+    if (!text) { status.textContent = 'Write the text first.'; return; }
     btn.disabled = true;
     status.textContent = 'Making a sample…';
     try {
