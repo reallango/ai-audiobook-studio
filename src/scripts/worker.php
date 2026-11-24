@@ -26,17 +26,17 @@ $idle = 0;
 while (!$stop) {
     JobService::beat();
     try {
-        if ($jobs->runNext(static function () use (&$stop): bool { return $stop; })) {
-            $idle = 0;
-            continue;
-        }
+        if ($tasks->runNext()) { $idle = 0; continue; }      // M4B builds first: short, and they would otherwise wait behind every chapter of every book
     } catch (Throwable $error) {
         fwrite(STDERR, '[worker] ' . $error->getMessage() . "\n");
         sleep(5);
         continue;
     }
     try {
-        if ($tasks->runNext()) { $idle = 0; continue; }      // after the chapter jobs: building the M4B
+        if ($jobs->runNext(static function () use (&$stop): bool { return $stop; })) {
+            $idle = 0;
+            continue;
+        }
     } catch (Throwable $error) {
         fwrite(STDERR, '[worker] ' . $error->getMessage() . "\n");
         sleep(5);

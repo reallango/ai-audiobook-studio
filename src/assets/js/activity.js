@@ -30,6 +30,7 @@
     const failed = items.filter(i => i.status === 'FAILED');
     const parts = [];
     const m4b = items.find(i => i.kind === 'm4b' && (i.status === 'RUNNING' || i.status === 'QUEUED'));
+    if (data.ahead > 0 && !running.length) parts.push('Waiting for another book (' + plural(data.ahead, 'chapter') + ' ahead)');
     if (running.length || queued.length) {
       const total = running.length + queued.length;
       const r = running[0];
@@ -78,6 +79,7 @@
     head.append(el('span', 'act-title', 'Activity'), el('span', 'act-summary', summary(data)), el('span', 'act-toggle', shown ? 'hide' : 'show'));
     head.addEventListener('click', () => { open = !shown; render(data); });
     bar.append(head);
+    if (data.ahead > 0) bar.append(el('p', 'act-warn', 'Waiting behind ' + plural(data.ahead, 'chapter') + ' from another book (' + data.ahead_books.join(', ') + '). Yours start when those are done.'));
     if (data.active > 0 && !data.worker) bar.append(el('p', 'act-warn', 'The background worker has not been seen recently, so waiting tasks will not start until it is running.'));
     if (shown) {
       const list = el('ul', 'act-list');

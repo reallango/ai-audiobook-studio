@@ -63,7 +63,7 @@ final class TaskService
 
     /**
      * Everything going on for a project, newest first, for the activity bar.
-     * @return array{worker:bool,active:int,items:list<array<string,mixed>>}
+     * @return array{worker:bool,active:int,ahead:int,ahead_books:list<string>,items:list<array<string,mixed>>}
      */
     public function activity(string $projectId): array
     {
@@ -99,10 +99,28 @@ final class TaskService
             ]);
         }
 
+        // Chapters from other books that the worker will do before this book's waiting chapters.
+        $ahead = 0;
+        $aheadBooks = [];
+        $mine = $db->prepare("SELECT MIN(requested_at) FROM generation_jobs WHERE project_id=:p AND status='QUEUED'");
+        $mine->execute(['p' => $projectId]);
+        $oldest = $mine->fetchColumn();
+        $runningQuery = $db->prepare("SELECT COUNT(*) FROM generation_jobs WHERE project_id=:p AND status='RUNNING'");
+        $runningQuery->execute(['p' => $projectId]);
+        $running = (int) $runningQuery->fetchColumn();
+        if (is_string($oldest) && $running === 0) {
+            $other = $db->prepare(
+                "SELECT p.title, COUNT(*) n FROM generation_jobs g JOIN projects p ON p.id=g.project_id
+                 WHERE g.project_id<>:p AND (g.status='RUNNING' OR (g.status='QUEUED' AND g.requested_at < :oldest)) GROUP BY p.id ORDER BY p.title"
+            );
+            $other->execute(['p' => $projectId, 'oldest' => $oldest]);
+            foreach ($other->fetchAll() as $o) { $ahead += (int) $o['n']; $aheadBooks[] = (string) $o['title']; }
+        }
+
         $active = count(array_filter($items, static fn (array $i): bool => in_array($i['status'], ['QUEUED', 'RUNNING'], true)));
         // a long build does not beat the worker's heartbeat, so a running task counts as the worker being there
         $busy = (int) $db->query("SELECT COUNT(*) FROM background_tasks WHERE status='RUNNING'")->fetchColumn() > 0;
-        return ['worker' => JobService::workerOnline() || $busy, 'active' => $active, 'items' => $items];
+        return ['worker' => JobService::workerOnline() || $busy, 'active' => $active, 'ahead' => $ahead, 'ahead_books' => $aheadBooks, 'items' => $items];
     }
 
     // ----- internals -----
@@ -111,7 +129,9 @@ final class TaskService
     private function claim(): ?array
     {
         $db = $this->db();
-        $s = $db->prepare("SELECT * FROM background_tasks WHERE status='QUEUED' OR (status='RUNNING' AND heartbeat_at < datetime('now', :stale)) ORDER BY requested_at LIMIT 1");
+        // A build waits only for its own book's chapter audio (so it includes the chapters still being made), never for another book's.
+        $s = $db->prepare("SELECT * FROM background_tasks t WHERE (t.status='QUEUED' OR (t.status='RUNNING' AND t.heartbeat_at < datetime('now', :stale)))
+             AND NOT EXISTS (SELECT 1 FROM generation_jobs g WHERE g.project_id=t.project_id AND g.status IN ('QUEUED','RUNNING')) ORDER BY t.requested_at LIMIT 1");
         $s->execute(['stale' => '-' . self::STALE_SECONDS . ' seconds']);
         $task = $s->fetch();
         if (!$task) return null;

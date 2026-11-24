@@ -41,6 +41,8 @@ $pdo->exec("INSERT INTO background_tasks(id,project_id,kind,status) VALUES('t','
 check('a waiting build is busy', $tasks->isBusy('p'), true);
 check('and is not queued twice', $pdo->query("SELECT COUNT(*) FROM background_tasks WHERE project_id='p'")->fetchColumn() >= 1, true);
 check('it appears first in the activity', [$tasks->activity('p')['items'][0]['kind'], $tasks->activity('p')['items'][0]['status'], $tasks->activity('p')['active']], ['m4b', 'QUEUED', 2]);
+check('a build waits while its own book still has a chapter being made', $tasks->runNext(), false);
+$pdo->exec("UPDATE generation_jobs SET status='DONE', finished_at=datetime('now') WHERE id='j'");
 check('the worker runs it', $tasks->runNext(), true);
 $row = $pdo->query("SELECT status, message FROM background_tasks WHERE id='t'")->fetch();
 check('a build with nothing ready fails with the reason', [$row['status'], $row['message']], ['FAILED', 'No chapter has finished audio yet.']);
@@ -51,6 +53,25 @@ check('nothing left to run', $tasks->runNext(), false);
 $pdo->exec("INSERT INTO background_tasks(id,project_id,kind,status,heartbeat_at) VALUES('r','p','m4b','RUNNING',datetime('now'))");
 check('a running build counts as the worker being there', $tasks->activity('p')['worker'], true);
 check('a restart puts a half-done build back in the queue', [$tasks->recover(), $pdo->query("SELECT status FROM background_tasks WHERE id='r'")->fetchColumn()], [1, 'QUEUED']);
+
+// two books at once
+$pdo->exec("INSERT INTO projects(id,slug,title) VALUES('z','z','Other Book')");
+$pdo->exec("INSERT INTO logical_sections(id,project_id,position,title,included) VALUES('LZ','z',1,'Chapter 1',1)");
+$pdo->exec("UPDATE generation_jobs SET status='RUNNING' WHERE id='j'");      // book p is busy making a chapter
+check('a build for a book with no waiting chapters is not held up by another book', [$pdo->exec("INSERT INTO background_tasks(id,project_id,kind,status) VALUES('tz','z','m4b','QUEUED')"), $tasks->runNext()], [1, true]);
+check('and it ran: its own task, not the other book\'s', [$pdo->query("SELECT status FROM background_tasks WHERE id='tz'")->fetchColumn(), $pdo->query("SELECT status FROM background_tasks WHERE id='r'")->fetchColumn()], ['FAILED', 'QUEUED']);
+$pdo->exec("INSERT INTO generation_jobs(id,project_id,logical_section_id,status) VALUES('jz','z','LZ','QUEUED')");
+$pdo->exec("INSERT INTO background_tasks(id,project_id,kind,status) VALUES('tz2','z','m4b','QUEUED')");
+check('a book\'s build still waits for that book\'s own chapters', $tasks->runNext(), false);
+
+$pdo->exec("DELETE FROM generation_jobs");
+$pdo->exec("INSERT INTO generation_jobs(id,project_id,logical_section_id,status,started_at,requested_at) VALUES('jr','p','L','RUNNING',datetime('now'),datetime('now','-5 minutes'))");
+$pdo->exec("INSERT INTO logical_sections(id,project_id,position,title,included) VALUES('LZ2','z',2,'Chapter 2',1)");
+$pdo->exec("INSERT INTO generation_jobs(id,project_id,logical_section_id,status,requested_at) VALUES('jq','z','LZ','QUEUED',datetime('now','-1 minutes'))");
+$wait = $tasks->activity('z');
+check('a queued chapter says how many chapters from other books are ahead of it', [$wait['ahead'], $wait['ahead_books']], [1, ['Book']]);
+check('a book that is running does not report waiting', $tasks->activity('p')['ahead'], 0);
+$pdo->exec("INSERT INTO generation_jobs(id,project_id,logical_section_id,status,requested_at) VALUES('jq2','p','LZ2','QUEUED',datetime('now','-30 minutes'))");
 
 @unlink($db);
 echo $failures === 0 ? "\nall passed\n" : "\n$failures failed\n";
