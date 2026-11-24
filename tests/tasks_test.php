@@ -51,7 +51,7 @@ check('the failure stays visible for a while', $tasks->activity('p')['items'][0]
 check('nothing left to run', $tasks->runNext(), false);
 
 $pdo->exec("INSERT INTO background_tasks(id,project_id,kind,status,heartbeat_at) VALUES('r','p','m4b','RUNNING',datetime('now'))");
-check('a running build counts as the worker being there', $tasks->activity('p')['worker'], true);
+check('a running build counts as the build worker being there', $tasks->activity('p')['task_worker'], true);
 check('a restart puts a half-done build back in the queue', [$tasks->recover(), $pdo->query("SELECT status FROM background_tasks WHERE id='r'")->fetchColumn()], [1, 'QUEUED']);
 
 // two books at once

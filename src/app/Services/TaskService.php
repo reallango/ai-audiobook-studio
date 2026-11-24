@@ -49,6 +49,22 @@ final class TaskService
         return true;
     }
 
+    public static function beat(): void
+    {
+        Database::connection()->prepare("INSERT INTO settings(setting_key,setting_value) VALUES('task_worker_heartbeat', datetime('now')) ON CONFLICT(setting_key) DO UPDATE SET setting_value=excluded.setting_value, updated_at=CURRENT_TIMESTAMP")->execute();
+    }
+
+    /** True when the task worker has been seen recently, or is in the middle of a long build (which does not beat). */
+    public static function workerOnline(int $withinSeconds = 30): bool
+    {
+        $db = Database::connection();
+        $s = $db->prepare("SELECT setting_value FROM settings WHERE setting_key='task_worker_heartbeat'");
+        $s->execute();
+        $v = $s->fetchColumn();
+        if (is_string($v) && (time() - (int) strtotime($v . ' UTC')) <= $withinSeconds) return true;
+        return (int) $db->query("SELECT COUNT(*) FROM background_tasks WHERE status='RUNNING'")->fetchColumn() > 0;
+    }
+
     /** True while a task of this kind is waiting or running for the project. */
     public function isBusy(string $projectId, string $kind = 'm4b'): bool
     {
@@ -63,7 +79,7 @@ final class TaskService
 
     /**
      * Everything going on for a project, newest first, for the activity bar.
-     * @return array{worker:bool,active:int,ahead:int,ahead_books:list<string>,items:list<array<string,mixed>>}
+     * @return array{worker:bool,task_worker:bool,active:int,ahead:int,ahead_books:list<string>,items:list<array<string,mixed>>}
      */
     public function activity(string $projectId): array
     {
@@ -118,9 +134,7 @@ final class TaskService
         }
 
         $active = count(array_filter($items, static fn (array $i): bool => in_array($i['status'], ['QUEUED', 'RUNNING'], true)));
-        // a long build does not beat the worker's heartbeat, so a running task counts as the worker being there
-        $busy = (int) $db->query("SELECT COUNT(*) FROM background_tasks WHERE status='RUNNING'")->fetchColumn() > 0;
-        return ['worker' => JobService::workerOnline() || $busy, 'active' => $active, 'ahead' => $ahead, 'ahead_books' => $aheadBooks, 'items' => $items];
+        return ['worker' => JobService::workerOnline(), 'task_worker' => self::workerOnline(), 'active' => $active, 'ahead' => $ahead, 'ahead_books' => $aheadBooks, 'items' => $items];
     }
 
     // ----- internals -----

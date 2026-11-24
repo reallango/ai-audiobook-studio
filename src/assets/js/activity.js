@@ -65,7 +65,7 @@
       bar.classList.remove('busy', 'has-failed');
       const idle = el('div', 'act-head act-idle');
       idle.append(el('span', 'act-title', 'Activity'), el('span', 'act-summary', 'Nothing running. Chapter audio and M4B builds show here while they work.'),
-        el('span', 'act-toggle', data.worker ? 'worker online' : 'worker not seen recently'));
+        el('span', 'act-toggle', data.worker && data.task_worker ? 'workers online' : 'a worker has not been seen recently'));
       bar.append(idle);
       return;
     }
@@ -80,7 +80,10 @@
     head.addEventListener('click', () => { open = !shown; render(data); });
     bar.append(head);
     if (data.ahead > 0) bar.append(el('p', 'act-warn', 'Waiting behind ' + plural(data.ahead, 'chapter') + ' from another book (' + data.ahead_books.join(', ') + '). Yours start when those are done.'));
-    if (data.active > 0 && !data.worker) bar.append(el('p', 'act-warn', 'The background worker has not been seen recently, so waiting tasks will not start until it is running.'));
+    const chaptersWaiting = data.items.some(i => i.kind === 'chapter' && (i.status === 'QUEUED' || i.status === 'RUNNING'));
+    const tasksWaiting = data.items.some(i => i.kind !== 'chapter' && (i.status === 'QUEUED' || i.status === 'RUNNING'));
+    if (chaptersWaiting && !data.worker) bar.append(el('p', 'act-warn', 'The audio worker has not been seen recently, so waiting chapters will not start until it is running.'));
+    if (tasksWaiting && !data.task_worker) bar.append(el('p', 'act-warn', 'The build worker has not been seen recently, so the M4B build will not start until it is running.'));
     if (shown) {
       const list = el('ul', 'act-list');
       for (const i of data.items.slice(0, 25)) list.append(row(i));
