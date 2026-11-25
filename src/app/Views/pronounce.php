@@ -126,11 +126,12 @@ $fromTag = static function (array $r): array {
   <?php endif; ?>
 
   <?php if ($tab === 'suggestions'): ?>
-    <?php $found = $checkResults['found']; $missing = $checkResults['missing']; $ordinary = $checkResults['ordinary'] ?? []; ?>
+    <?php $found = $checkResults['found']; $missing = $checkResults['missing']; $ordinary = $checkResults['ordinary'] ?? []; $already = $checkResults['already'] ?? [];
+      $voiceTone = static fn (?float $s, int $min): string => $s === null ? '' : ($s >= $min ? 'green' : ($s >= $min - 20 ? 'amber' : 'red')); ?>
     <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 14px">
       <nav class="segmented" aria-label="Suggestions" style="min-width: 320px">
         <a href="<?= e($tabUrl('suggestions')) ?>" <?= !$online ? 'aria-current="page"' : '' ?>>From the text</a>
-        <a href="<?= e($tabUrl('suggestions', ['view' => 'online'])) ?>" <?= $online ? 'aria-current="page"' : '' ?>>Checked online<?= $found || $missing ? ' (' . (count($found) + count($missing)) . ')' : '' ?></a>
+        <a href="<?= e($tabUrl('suggestions', ['view' => 'online'])) ?>" <?= $online ? 'aria-current="page"' : '' ?>>Checked online<?= $found || $missing ? ' (' . count($found) . ' to fix)' : '' ?></a>
       </nav>
       <?php if (!$archived): ?>
         <form method="post" action="<?= e(base_url('pron-check')) ?>" style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-left: auto">
@@ -140,7 +141,7 @@ $fromTag = static function (array $r): array {
             <select name="region" style="width: auto">
               <?php foreach (\App\Services\PronCheckService::REGIONS as $code => $label): ?><option value="<?= e($code) ?>" <?= ($checkRegion ?? 'americas') === $code ? 'selected' : '' ?>><?= e($label) ?></option><?php endforeach; ?>
             </select></label>
-          <?php if ($found || $missing || $ordinary): ?><label class="quiet" style="display: flex; gap: 6px; align-items: center"><input type="checkbox" name="recheck" value="1"> check the old ones again</label><?php endif; ?>
+          <?php if ($found || $missing || $ordinary || $already): ?><label class="quiet" style="display: flex; gap: 6px; align-items: center"><input type="checkbox" name="recheck" value="1"> check the old ones again</label><?php endif; ?>
           <button type="submit" <?= $checkRunning ? 'disabled' : '' ?> title="Looks up names and odd spellings on Wiktionary and Wikipedia, about one word a second, in the background"><?= $checkRunning ? 'Checking online…' : 'Check pronunciations online' ?></button>
         </form>
       <?php endif; ?>
@@ -149,7 +150,19 @@ $fromTag = static function (array $r): array {
 
   <?php if ($tab === 'suggestions' && $online): ?>
     <?php if ($checkRunning): ?><p class="notice" style="margin: 0 0 14px">Checking now. The Activity button shows how far it is; refresh this page for the results so far.</p><?php endif; ?>
-    <?php if (!$found && !$missing && !$ordinary && !$checkRunning): ?>
+    <?php if (($found || $already) && !$archived): ?>
+      <div class="card" style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap; padding: 12px 16px; margin: 0 0 14px">
+        <?php if ($checkerReady ?? false): ?>
+          <span class="quiet" style="flex: 1 1 280px">“Voice now” compares how the voice reads each word with what was found online, without making audio. At <?= (int) $checkMinimum ?> or above it counts as already right.</span>
+          <form method="post" action="<?= e(base_url('pron-check')) ?>" style="display: flex; gap: 6px; align-items: center"><?= csrf_field() ?><input type="hidden" name="id" value="<?= e($pid) ?>"><input type="hidden" name="action" value="minimum">
+            <label class="quiet" style="display: flex; gap: 6px; align-items: center">Good enough at <input type="number" name="minimum" min="50" max="100" value="<?= (int) $checkMinimum ?>" style="width: 72px"></label><button type="submit" class="btn-soft btn-sm">Set</button></form>
+          <form method="post" action="<?= e(base_url('pron-check')) ?>"><?= csrf_field() ?><input type="hidden" name="id" value="<?= e($pid) ?>"><input type="hidden" name="action" value="compare"><button type="submit" class="btn-soft btn-sm" <?= $checkRunning ? 'disabled' : '' ?> title="Asks the pronunciation checker again, for example after changing the book's voice">Compare with the voice</button></form>
+        <?php else: ?>
+          <span class="quiet">Set up the pronunciation checker in <a href="<?= e(base_url('diagnostics')) ?>">Diagnostics</a> to see which of these the voice already says right, and get plain spellings for the rest.</span>
+        <?php endif; ?>
+      </div>
+    <?php endif; ?>
+    <?php if (!$found && !$missing && !$ordinary && !$already && !$checkRunning): ?>
       <p class="card muted">Nothing checked yet. “Check pronunciations online” looks up this book's names and odd spellings on Wiktionary and Wikipedia (using the book's title to find the right page), and suggests a rule for each one it finds.</p>
     <?php endif; ?>
     <?php if ($found): $high = count(array_filter($found, static fn (array $r): bool => $r['confidence'] === 'high')); ?>
@@ -161,15 +174,22 @@ $fromTag = static function (array $r): array {
             <button type="submit" class="btn-dark btn-sm">Make all <?= $high ?> high-confidence rules</button></form>
         <?php endif; ?>
       </div>
-      <p class="quiet" style="margin: 0 0 10px">Each rule tells the voice the exact sounds found online. Try one before making it: a source can be about something else with the same name.</p>
+      <p class="quiet" style="margin: 0 0 10px">Make rule tells the voice the exact sounds found online; where there is one, a plain spelling is an alternative that reads closest. Try before making a rule: a source can be about something else with the same name.</p>
       <div class="table-box">
         <table class="table">
-          <thead><tr><th>Word</th><th>Sounds like</th><th>Confidence</th><th>Source</th><th><span class="visually-hidden">Actions</span></th></tr></thead>
+          <thead><tr><th>Word</th><th>Voice now</th><th>Sounds like</th><th>Confidence</th><th>Source</th><th><span class="visually-hidden">Actions</span></th></tr></thead>
           <tbody>
           <?php foreach ($found as $r): $tone = ['high' => 'green', 'medium' => 'amber', 'low' => 'red'][$r['confidence']] ?? ''; ?>
             <tr>
               <td><strong><?= e((string) $r['word']) ?></strong></td>
-              <td><?= e((string) $r['respelling']) ?><br><span class="quiet" style="font-family: var(--serif)">/<?= e((string) $r['ipa'] !== '' ? trim((string) $r['ipa'], '/[]') : (string) $r['sounds']) ?>/</span><?php $accent = trim((string) ($r['accent'] ?? '')); ?><?php if ($r['lang'] !== '' && ($r['lang'] !== 'en' || $accent !== '')): ?><br><span class="quiet"><?= e(\App\Services\PronLookup::languageName((string) $r['lang'])) ?><?= $accent !== '' ? ', ' . e(mb_strimwidth($accent, 0, 60, '…')) : '' ?></span><?php endif; ?></td>
+              <td><?php if ($r['voice_score'] !== null): ?><span class="tag <?= $voiceTone((float) $r['voice_score'], (int) $checkMinimum) ?>"><?= (int) round((float) $r['voice_score']) ?></span><br><span class="quiet">says <?= e(\App\Services\IpaConverter::respell((string) $r['voice_reads'])) ?></span><?php else: ?><span class="quiet">–</span><?php endif; ?></td>
+              <td><?= e((string) $r['respelling']) ?><br><span class="quiet" style="font-family: var(--serif)">/<?= e((string) $r['ipa'] !== '' ? trim((string) $r['ipa'], '/[]') : (string) $r['sounds']) ?>/</span><?php $accent = trim((string) ($r['accent'] ?? '')); ?><?php if ($r['lang'] !== '' && ($r['lang'] !== 'en' || $accent !== '')): ?><br><span class="quiet"><?= e(\App\Services\PronLookup::languageName((string) $r['lang'])) ?><?= $accent !== '' ? ', ' . e(mb_strimwidth($accent, 0, 60, '…')) : '' ?></span><?php endif; ?>
+                <?php if ((string) $r['alt_spelling'] !== ''): ?>
+                  <div style="margin-top: 6px">Or write it <strong>“<?= e((string) $r['alt_spelling']) ?>”</strong> <span class="tag <?= $voiceTone((float) $r['alt_score'], (int) $checkMinimum) ?>"><?= (int) round((float) $r['alt_score']) ?></span>
+                    <button type="button" class="btn-link" style="font-size: 13px" data-wb-load data-written="<?= e((string) $r['word']) ?>" data-spoken="<?= e((string) $r['alt_spelling']) ?>" data-layer="project|<?= e($pid) ?>" data-label="plain spelling" data-case="<?= (int) ($r['common'] ?? 0) === 1 ? '0' : '1' ?>" data-whole="1">Try</button>
+                    <?php if (!$archived): ?><form method="post" action="<?= e(base_url('pron-check')) ?>" style="display: inline"><?= csrf_field() ?><input type="hidden" name="id" value="<?= e($pid) ?>"><input type="hidden" name="action" value="make"><input type="hidden" name="spelling" value="1"><input type="hidden" name="word" value="<?= e((string) $r['word']) ?>"><button type="submit" class="btn-link" style="font-size: 13px">Use this spelling</button></form><?php endif; ?>
+                  </div>
+                <?php endif; ?></td>
               <td><span class="tag <?= $tone ?>"><?= e(ucfirst((string) $r['confidence'])) ?></span></td>
               <td><a href="<?= e((string) $r['source_url']) ?>" target="_blank" rel="noopener noreferrer"><?= e((string) $r['source_title']) ?></a><?= $r['note'] !== '' ? '<br><span class="quiet">' . e((string) $r['note']) . '</span>' : '' ?></td>
               <td style="text-align: right; white-space: nowrap">
@@ -184,6 +204,19 @@ $fromTag = static function (array $r): array {
           </tbody>
         </table>
       </div>
+    <?php endif; ?>
+    <?php if ($already): ?>
+      <details style="margin: 22px 0 0">
+        <summary style="cursor: pointer"><strong>The voice already says these</strong> <span class="count quiet"><?= count($already) ?></span> <span class="quiet">· its reading scores <?= (int) $checkMinimum ?> or more against what was found online</span></summary>
+        <div class="chips" style="margin-top: 10px">
+          <?php foreach ($already as $r): ?>
+            <span style="display: inline-flex; gap: 2px; align-items: center">
+              <button type="button" class="chip" title="Says <?= e(\App\Services\IpaConverter::respell((string) $r['voice_reads'])) ?> (<?= (int) round((float) $r['voice_score']) ?>); found online: <?= e((string) $r['respelling']) ?>" data-wb-load data-written="<?= e((string) $r['word']) ?>" data-spoken="<?= e((string) $r['spoken']) ?>" data-layer="project|<?= e($pid) ?>" data-label="found online: <?= e((string) $r['respelling']) ?>" data-case="<?= (int) ($r['common'] ?? 0) === 1 ? '0' : '1' ?>" data-whole="1"><?= e((string) $r['word']) ?> <span class="quiet"><?= (int) round((float) $r['voice_score']) ?></span></button>
+              <?php if (!$archived): ?><form method="post" action="<?= e(base_url('pron-check')) ?>" style="display: inline"><?= csrf_field() ?><input type="hidden" name="id" value="<?= e($pid) ?>"><input type="hidden" name="action" value="dismiss"><input type="hidden" name="word" value="<?= e((string) $r['word']) ?>"><button type="submit" class="btn-link" aria-label="Dismiss <?= e((string) $r['word']) ?>" title="Dismiss" style="font-size: 13px; padding: 0 4px">×</button></form><?php endif; ?>
+            </span>
+          <?php endforeach; ?>
+        </div>
+      </details>
     <?php endif; ?>
     <?php if ($ordinary): ?>
       <details style="margin: 22px 0 0">
@@ -205,7 +238,7 @@ $fromTag = static function (array $r): array {
       <div class="chips">
         <?php foreach ($missing as $r): ?>
           <span style="display: inline-flex; gap: 2px; align-items: center">
-            <button type="button" class="chip" data-wb-load data-written="<?= e((string) $r['word']) ?>" data-spoken="<?= e((string) $r['word']) ?>" data-layer="project|<?= e($pid) ?>" data-label="not found online" data-case="1" data-whole="1"><?= e((string) $r['word']) ?></button>
+            <button type="button" class="chip" <?= (string) $r['voice_reads'] !== '' ? 'title="The voice says ' . e(\App\Services\IpaConverter::respell((string) $r['voice_reads'])) . '"' : '' ?> data-wb-load data-written="<?= e((string) $r['word']) ?>" data-spoken="<?= e((string) $r['word']) ?>" data-layer="project|<?= e($pid) ?>" data-label="not found online" data-case="1" data-whole="1"><?= e((string) $r['word']) ?></button>
             <?php if (!$archived): ?><form method="post" action="<?= e(base_url('pron-check')) ?>" style="display: inline"><?= csrf_field() ?><input type="hidden" name="id" value="<?= e($pid) ?>"><input type="hidden" name="action" value="dismiss"><input type="hidden" name="word" value="<?= e((string) $r['word']) ?>"><button type="submit" class="btn-link" aria-label="Dismiss <?= e((string) $r['word']) ?>" title="Dismiss" style="font-size: 13px; padding: 0 4px">×</button></form><?php endif; ?>
           </span>
         <?php endforeach; ?>

@@ -19,15 +19,20 @@ final class PronCheckService
     public const REGIONS = ['americas' => 'the Americas (US English, Latin American Spanish)', 'europe' => 'Europe (British English, Spain, France)'];
     private const CONFIDENCE_ORDER = ['high' => 3, 'medium' => 2, 'low' => 1];
 
-    public function __construct(private ?PronLookup $lookup = null)
+    public function __construct(private ?PronLookup $lookup = null, private ?PronCheckClient $voice = null)
     {
         $this->lookup ??= new PronLookup();
+        $this->voice ??= new PronCheckClient();
     }
 
     /** Queues a check of the book's flagged words. @param list<string> $kinds */
-    public function start(string $projectId, array $kinds, bool $recheck = false, ?string $region = null): array
+    public function start(string $projectId, array $kinds, bool $recheck = false, ?string $region = null, bool $voiceOnly = false): array
     {
         if ($region !== null) $this->setRegion($projectId, $region);
+        if ($voiceOnly) {
+            if (!PronCheckClient::configured()) throw new InvalidArgumentException('The pronunciation checker is not set up (see Diagnostics).');
+            return (new TaskService())->enqueue($projectId, 'pron_check', ['voice_only' => true]);
+        }
         $kinds = array_values(array_intersect($kinds, array_keys(TextCheckService::KINDS)));
         if ($kinds === []) $kinds = self::DEFAULT_KINDS;
         return (new TaskService())->enqueue($projectId, 'pron_check', ['kinds' => $kinds, 'recheck' => $recheck]);
@@ -103,6 +108,10 @@ final class PronCheckService
      */
     public function run(string $projectId, array $params, ?callable $progress = null): array
     {
+        if (!empty($params['voice_only'])) {
+            $n = $this->compareWithVoice($projectId);
+            return ['checked' => $n, 'found' => 0];
+        }
         $project = $this->project($projectId);
         $context = trim($project['title'] . ' ' . (new IntroService())->author($projectId));
         $words = $this->words($projectId, $params['kinds'] ?? self::DEFAULT_KINDS, !empty($params['recheck']));
@@ -121,7 +130,48 @@ final class PronCheckService
             if (!empty($r['options'])) $this->store($projectId, $w, PronLookup::pick($r, $region, $rank));
             if ($r['status'] === 'found') $found++;
         }
+        if (PronCheckClient::configured() && $words !== []) {
+            try {
+                $this->compareWithVoice($projectId);
+            } catch (\RuntimeException) {
+                // the checker being away does not lose what was found online; "Compare with the voice" can run later
+            }
+        }
         return ['checked' => count($words), 'found' => $found];
+    }
+
+    /**
+     * Asks the pronunciation checker how the book's voice reads each open word and how close that is to what was
+     * found online, and for a plain spelling that comes closer. Returns how many words were compared.
+     */
+    public function compareWithVoice(string $projectId): int
+    {
+        $project = $this->project($projectId);
+        $voice = (string) (($project['active_voice_profile_id'] ?? '') ?: VoiceCatalog::DEFAULT_VOICE);
+        $rows = $this->rows($projectId, false);
+        if ($rows === []) return 0;
+        $items = array_map(static fn (array $r): array => ['word' => (string) $r['word']] + ($r['status'] === 'found' && $r['sounds'] !== '' ? ['sounds' => (string) $r['sounds']] : []), $rows);
+        $answers = $this->voice->assess($items, str_starts_with($voice, 'b'), (float) $this->minimum($projectId));
+        $update = $this->db()->prepare('UPDATE pron_checks SET voice_reads=:vr, voice_score=:vs, alt_spelling=:as, alt_reads=:ar, alt_score=:asc WHERE project_id=:p AND word=:w');
+        foreach ($answers as $a) {
+            $alt = is_array($a['spelling'] ?? null) ? $a['spelling'] : null;
+            $update->execute(['p' => $projectId, 'w' => (string) $a['word'], 'vr' => (string) ($a['voice'] ?? ''), 'vs' => isset($a['score']) ? (float) $a['score'] : null,
+                'as' => $alt !== null ? (string) $alt['text'] : '', 'ar' => $alt !== null ? (string) $alt['reads'] : '', 'asc' => $alt !== null ? (float) $alt['score'] : null]);
+        }
+        return count($answers);
+    }
+
+    /** The score at which the voice counts as already saying a word right. */
+    public function minimum(string $projectId): int
+    {
+        $m = (int) ($this->project($projectId)['pron_minimum'] ?? PronCheckClient::DEFAULT_MINIMUM);
+        return $m >= 50 && $m <= 100 ? $m : PronCheckClient::DEFAULT_MINIMUM;
+    }
+
+    public function setMinimum(string $projectId, int $minimum): void
+    {
+        if ($minimum < 50 || $minimum > 100) throw new InvalidArgumentException('Choose a score between 50 and 100.');
+        $this->db()->prepare('UPDATE projects SET pron_minimum=:m WHERE id=:id')->execute(['m' => $minimum, 'id' => $projectId]);
     }
 
     /** @param array<string,mixed> $w @param array<string,mixed> $r */
@@ -166,12 +216,15 @@ final class PronCheckService
     /**
      * The open results split for the page: found (with a rule to make), ordinary English words (found, but the voice
      * very likely reads them right already), and not found. A word in two capitals (Mamá, mamá) shows once.
-     * @return array{found:list<array<string,mixed>>,ordinary:list<array<string,mixed>>,missing:list<array<string,mixed>>}
+     * Compared with the voice, a found word the voice already says closely enough goes to "already" instead, and the
+     * rest are listed worst first.
+     * @return array{found:list<array<string,mixed>>,ordinary:list<array<string,mixed>>,already:list<array<string,mixed>>,missing:list<array<string,mixed>>}
      */
     public function results(string $projectId): array
     {
         $own = array_flip(array_map('mb_strtolower', array_column((new PronunciationService())->rules('project', $projectId), 'pattern')));
-        $found = $ordinary = $missing = [];
+        $minimum = $this->minimum($projectId);
+        $found = $ordinary = $already = $missing = [];
         $seen = [];
         foreach ($this->rows($projectId, false) as $r) {
             $key = mb_strtolower((string) $r['word']);
@@ -180,16 +233,28 @@ final class PronCheckService
             if ($r['status'] !== 'found') { $missing[] = $r; continue; }
             $r += ['spoken' => IpaConverter::markup((string) $r['word'], (string) $r['sounds'])];
             if (self::ordinaryEnglish($r)) $ordinary[] = $r;
+            elseif ($r['voice_score'] !== null && (float) $r['voice_score'] >= $minimum) $already[] = $r;
             else $found[] = $r;
         }
-        return ['found' => $found, 'ordinary' => $ordinary, 'missing' => $missing];
+        // worst first once compared with the voice; words not compared yet keep their place after them
+        usort($found, static fn (array $a, array $b): int => [$a['voice_score'] === null, (float) $a['voice_score']] <=> [$b['voice_score'] === null, (float) $b['voice_score']]);
+        return ['found' => $found, 'ordinary' => $ordinary, 'already' => $already, 'missing' => $missing];
     }
 
-    /** Makes this book's rule for a found word: the exact sounds, with where they came from as the note. */
-    public function makeRule(string $projectId, string $word): void
+    /**
+     * Makes this book's rule for a found word: the exact sounds, with where they came from as the note; or, with
+     * $spelling, the plain spelling the checker found the voice reads closest.
+     */
+    public function makeRule(string $projectId, string $word, bool $spelling = false): void
     {
         $r = $this->row($projectId, $word);
         if ($r === null || $r['status'] !== 'found') throw new InvalidArgumentException('No pronunciation was found for that word.');
+        if ($spelling) {
+            if ((string) $r['alt_spelling'] === '') throw new InvalidArgumentException('No spelling was suggested for that word.');
+            (new PronunciationService())->save('project', $projectId, (string) $r['word'], (string) $r['alt_spelling'], (int) ($r['common'] ?? 0) !== 1, true,
+                mb_substr('Spelled so the voice says ' . $r['respelling'] . ' (' . $r['source_title'] . '; ' . round((float) $r['alt_score']) . '/100 match)', 0, 300), 'word');
+            return;
+        }
         (new PronunciationService())->save('project', $projectId, (string) $r['word'], IpaConverter::markup((string) $r['word'], (string) $r['sounds']), (int) ($r['common'] ?? 0) !== 1, true,
             mb_substr('Sounds like ' . $r['respelling'] . ' (' . $r['source_title'] . ', ' . $r['confidence'] . ' confidence)', 0, 300), 'word');
     }

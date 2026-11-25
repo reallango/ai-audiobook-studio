@@ -97,7 +97,7 @@ final class IpaConverter
         $map = [
             'A' => 'ay', 'I' => 'eye', 'O' => 'oh', 'W' => 'ow', 'Y' => 'oy', 'æ' => 'a', 'ɑ' => 'ah', 'ɔ' => 'aw', 'ə' => 'uh', 'ᵊ' => 'uh', 'ɛ' => 'eh',
             'ɜ' => 'ur', 'ɪ' => 'ih', 'i' => 'ee', 'ʊ' => 'uu', 'u' => 'oo', 'ʌ' => 'uh', 'ð' => 'th', 'θ' => 'th', 'ŋ' => 'ng', 'ɡ' => 'g', 'ɹ' => 'r',
-            'ʃ' => 'sh', 'ʒ' => 'zh', 'ʤ' => 'j', 'ʧ' => 'ch', 'j' => 'y',
+            'ʃ' => 'sh', 'ʒ' => 'zh', 'ʤ' => 'j', 'ʧ' => 'ch', 'j' => 'y', 'T' => 't', 'ɾ' => 't', 'ɐ' => 'uh', 'ɚ' => 'er',
         ];
         $chars = preg_split('//u', $kokoro, -1, PREG_SPLIT_NO_EMPTY) ?: [];
         $isVowel = static fn (string $c): bool => mb_strpos(self::VOWELS, $c) !== false;

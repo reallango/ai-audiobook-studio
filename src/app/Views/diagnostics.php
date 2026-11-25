@@ -11,6 +11,7 @@ $allExtensions = !in_array(false, $extensions, true);
 $audioWorker = \App\Services\JobService::workerOnline();
 $buildWorker = \App\Services\TaskService::workerOnline();
 $voiceServer = trim((string) config('tts.kokoro_api_key', '')) !== '';
+$checker = \App\Services\PronCheckClient::configured() ? (new \App\Services\PronCheckClient())->problem() : 'Not set up (optional)';
 require APP_ROOT . '/app/Views/layout-top.php';
 
 $checks = [
@@ -21,6 +22,7 @@ $checks = [
     ['Voice server', $voiceServer, $voiceServer ? 'Set up' : 'No API key set'],
     ['Audio worker', $audioWorker, $audioWorker ? 'Running' : 'Not seen recently'],
     ['Build worker', $buildWorker, $buildWorker ? 'Running' : 'Not seen recently'],
+    ['Pronunciation checker', $checker === null, $checker ?? 'Connected'],
     ['Largest upload', $limits['effective_bytes'] !== null, (string) $limits['effective_display']],
 ];
 ?>
@@ -53,6 +55,21 @@ $checks = [
         <tr><td class="muted">Word list for name checks</td><td><?= \App\Services\TextCheckService::dictionary() !== null ? 'Installed' : 'Not installed' ?></td></tr>
       </tbody>
     </table>
+  </section>
+
+  <section class="card" style="margin-top: 20px">
+    <h2 style="font-size: 16px; margin: 0 0 4px">Pronunciation checker</h2>
+    <p class="quiet" style="margin: 0 0 12px">Optional. The pron-check service tells how the voice will read a word without making audio, so “Check pronunciations online” can show which words the voice already says right and suggest plain spellings for the rest.</p>
+    <?php if (\App\Services\PronCheckClient::fromEnvironment()): ?>
+      <p style="margin: 0">Set in the container's environment: <code><?= e(\App\Services\PronCheckClient::url()) ?></code></p>
+    <?php else: ?>
+      <form method="post" action="<?= e(base_url('pron-checker')) ?>" style="display: flex; gap: 10px; flex-wrap: wrap; align-items: end">
+        <?= csrf_field() ?>
+        <label style="flex: 1 1 260px">Address<input type="url" name="url" value="<?= e(\App\Services\PronCheckClient::url()) ?>" placeholder="http://192.168.1.130:8890"></label>
+        <label style="flex: 1 1 220px">API key<input type="password" name="key" value="" autocomplete="off" placeholder="<?= \App\Services\PronCheckClient::key() !== '' ? 'saved; leave blank to keep it' : 'the service’s PRON_CHECK_API_KEY' ?>"></label>
+        <button type="submit">Save and test</button>
+      </form>
+    <?php endif; ?>
   </section>
 
   <section class="table-box" style="margin-top: 20px">

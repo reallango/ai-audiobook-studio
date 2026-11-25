@@ -12,6 +12,9 @@ services:
     environment:
       KOKORO_URL: ${KOKORO_URL:-http://192.168.1.130:8880}
       KOKORO_API_KEY: ${KOKORO_API_KEY:-}
+      # optional: the pronunciation checker (pron-check/); can also be set on the Diagnostics page
+      PRON_CHECK_URL: ${PRON_CHECK_URL:-}
+      PRON_CHECK_API_KEY: ${PRON_CHECK_API_KEY:-}
     volumes:
       - audiobook-storage:/app/storage
 

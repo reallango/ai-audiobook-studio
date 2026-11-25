@@ -5,6 +5,7 @@ use App\Repositories\ProjectRepository;
 use App\Repositories\SourceAssetRepository;
 use App\Repositories\SourceAnalysisRepository;
 use App\Services\EpubUploadService;
+use App\Services\PronCheckClient;
 use App\Services\EpubAnalysisService;
 use App\Services\ProjectService;
 use App\Services\KokoroClient;
@@ -24,7 +25,7 @@ final class App
     public static function run(): void
     {
         $route=trim((string)($_GET['page']??'projects'),'/');
-        try{match($route){'api-health'=>self::json(self::health()),'diagnostics'=>self::view('diagnostics'),'projects','home',''=>self::projects(),'quick-import'=>self::quickImport(),'arrange'=>self::arrange(),'proofread'=>self::proofread(),'pronounce'=>self::pronounce(),'intro-settings'=>self::introSettings(),'pron-check'=>self::pronCheck(),'arrange-action'=>self::arrangeAction(),'section-text'=>self::sectionText(),'project-create'=>self::createProject(),'project'=>self::project(),'epub-upload'=>self::epubUpload(),'epub-analyze'=>self::epubAnalyze(),'source-sections'=>self::sourceSections(),'source-section'=>self::sourceSection(),'project-archive'=>self::archiveProject(),'project-restore'=>self::restoreProject(),'project-delete'=>self::deleteProject(),'voice-lab'=>self::voiceLab(),'voice-preview'=>self::voicePreview(),'pronunciation'=>self::pronunciation(),'rulesets'=>self::pronunciation(),'pronunciation-rule'=>self::pronunciationRule(),'pronunciation-example'=>self::pronunciationExample(),'rulesets-regex'=>self::regexPreview(),'textchecks'=>self::textChecks(),'activity'=>self::activity(),'section-preview'=>self::sectionPreview(),'chapters'=>self::chapters(),'chapter-review'=>self::chapterReview(),'chapter-audio'=>self::chapterAudio(),'chapter-text'=>self::chapterText(),'audio'=>self::audio(),'export'=>self::export(),default=>self::notFound()};}
+        try{match($route){'api-health'=>self::json(self::health()),'diagnostics'=>self::view('diagnostics'),'projects','home',''=>self::projects(),'quick-import'=>self::quickImport(),'arrange'=>self::arrange(),'proofread'=>self::proofread(),'pronounce'=>self::pronounce(),'intro-settings'=>self::introSettings(),'pron-check'=>self::pronCheck(),'pron-checker'=>self::pronChecker(),'arrange-action'=>self::arrangeAction(),'section-text'=>self::sectionText(),'project-create'=>self::createProject(),'project'=>self::project(),'epub-upload'=>self::epubUpload(),'epub-analyze'=>self::epubAnalyze(),'source-sections'=>self::sourceSections(),'source-section'=>self::sourceSection(),'project-archive'=>self::archiveProject(),'project-restore'=>self::restoreProject(),'project-delete'=>self::deleteProject(),'voice-lab'=>self::voiceLab(),'voice-preview'=>self::voicePreview(),'pronunciation'=>self::pronunciation(),'rulesets'=>self::pronunciation(),'pronunciation-rule'=>self::pronunciationRule(),'pronunciation-example'=>self::pronunciationExample(),'rulesets-regex'=>self::regexPreview(),'textchecks'=>self::textChecks(),'activity'=>self::activity(),'section-preview'=>self::sectionPreview(),'chapters'=>self::chapters(),'chapter-review'=>self::chapterReview(),'chapter-audio'=>self::chapterAudio(),'chapter-text'=>self::chapterText(),'audio'=>self::audio(),'export'=>self::export(),default=>self::notFound()};}
         catch(Throwable $error){error_log($error->__toString());http_response_code(500);self::view('error',['message'=>config('app.debug',false)?$error->getMessage():'The request could not be completed. Check the application log for details.']);}
     }
     private static function voiceLab():void
@@ -237,11 +238,29 @@ final class App
         $online = $tab === 'suggestions' && ($_GET['view'] ?? '') === 'online';
         $checks = new \App\Services\PronCheckService();
         self::view('pronounce', [
-            'online' => $online, 'checkResults' => $checks->results($id), 'checkRunning' => (new \App\Services\TaskService())->isBusy($id, 'pron_check'), 'checkRegion' => $checks->region($id),
+            'online' => $online, 'checkResults' => $checks->results($id), 'checkRunning' => (new \App\Services\TaskService())->isBusy($id, 'pron_check'), 'checkRegion' => $checks->region($id), 'checkMinimum' => $checks->minimum($id), 'checkerReady' => PronCheckClient::configured(),
             'project' => $project, 'tab' => $tab, 'own' => $own, 'inherited' => $inherited, 'voice' => $voice,
             'kind' => $kind, 'suggestions' => $suggestions, 'kindCounts' => $kindCounts, 'hasDictionary' => TextCheckService::dictionary() !== null,
             'linked' => $linked, 'available' => array_values(array_filter($svc->sets(), static fn (array $s): bool => !in_array($s['id'], $linkedIds, true))),
         ]);
+    }
+
+    /** POST from Diagnostics: where the pronunciation checker is, and its key (a blank key keeps the old one). */
+    private static function pronChecker():void
+    {
+        self::requirePost();
+        self::requireCsrf();
+        try {
+            if (PronCheckClient::fromEnvironment()) throw new \InvalidArgumentException('The checker is set in the container\'s environment (PRON_CHECK_URL), so it cannot be changed here.');
+            PronCheckClient::save((string) ($_POST['url'] ?? ''), (string) ($_POST['key'] ?? ''));
+            $problem = (new PronCheckClient())->problem();
+            if (!PronCheckClient::configured()) self::flash('success', 'Pronunciation checker removed.');
+            elseif ($problem === null) self::flash('success', 'Pronunciation checker connected.');
+            else self::flash('error', 'Saved, but: ' . $problem);
+        } catch (Throwable $error) {
+            self::flash('error', self::userMessage($error));
+        }
+        self::redirect('diagnostics');
     }
 
     /** POST from Pronunciation, Suggestions: start a check online, make rules from it, or dismiss a word. */
@@ -261,8 +280,15 @@ final class App
                     self::flash('success', 'Checking pronunciations online in the background, about one word a second. The Activity button shows how far it is; the results appear here.');
                     break;
                 case 'make':
-                    $svc->makeRule($id, (string) ($_POST['word'] ?? ''));
+                    $svc->makeRule($id, (string) ($_POST['word'] ?? ''), ($_POST['spelling'] ?? '') === '1');
                     self::flash('success', 'Rule made for “' . (string) ($_POST['word'] ?? '') . '”.');
+                    break;
+                case 'compare':
+                    $svc->start($id, [], false, null, true);
+                    self::flash('success', 'Comparing with the voice in the background; it takes a few seconds.');
+                    break;
+                case 'minimum':
+                    $svc->setMinimum($id, (int) ($_POST['minimum'] ?? PronCheckClient::DEFAULT_MINIMUM));
                     break;
                 case 'make_all':
                     $n = $svc->makeRules($id, (string) ($_POST['confidence'] ?? 'high'));

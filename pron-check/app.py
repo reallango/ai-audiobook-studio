@@ -215,7 +215,7 @@ def route_assess(body: AssessIn):
             row["score"] = compare(item.sounds, reads)
             if row["score"] < body.minimum:
                 alt = respell.best(item.sounds, item.word, lambda s: g2p(s, body.british), compare)
-                if alt and alt["score"] > row["score"]:
+                if alt and alt["score"] >= row["score"] + 5:          # only when clearly better than the word as written
                     row["spelling"] = alt
         out.append(row)
     return {"items": out}
