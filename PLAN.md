@@ -127,3 +127,25 @@ Diagnostics shows whether it is reachable.
 **Risks:** recognition models are trained on human speech and may mishear synthetic voices; short words score
 noisily (use carrier sentences and average two takes); the model download is large (about 1.3 GB); GPU sharing with
 Kokoro.
+
+### Phase 2 measurement (2026-11-25): listening is not good enough to judge; stop that part
+
+Service `pron-check/` deployed as its own Bosun stack on AI-Laptop (CPU). 15 names and foreign words plus 5 English
+controls, voice am_michael, each said three ways (as written / with the reference sounds / with the stressed vowel
+deliberately wrong), recognized by `wav2vec2-lv-60-espeak-cv-ft` and `wav2vec2-xlsr-53-espeak-cv-ft`.
+
+- **Speed is fine:** about 0.13 s to recognize a clip on CPU, 4 s for all 60 clips from Kokoro, ~10 s to load a model.
+- **English controls work:** right readings score 100 and the wrong ones 42–76.
+- **Names and foreign words do not:** right averages 69.5 and wrong 60.4 (lv-60). Only 7 of 15 words show a clear gap,
+  and 3 are reversed (Matanzas, Leftenant, Mamá); averaging both models gives 6 of 15. The models hear foreign sounds
+  through English habits, so the right foreign reading scores about 60–75 whatever the voice does, and the voice's
+  English guess often scores *higher* than the correct reading (Cienfuegos, Gracias, Mamá).
+- Go/no-go was "right readings clearly higher than wrong": **no-go** for scoring by ear.
+- **What does work:** comparing the reference with the voice's own reading from misaki (`/g2p`, no audio) is exact
+  and instant. It separates "the voice already says it" (Merde 100, Capitán 91, Gracias 91) from "the voice gets it
+  wrong" (Jesús 49, Vaya 43, Habana 66), and can rank respellings without making audio.
+- Worth a listen: with the markup, both models hear Mamá and Matanzas start "my-" (maɪ), not "mah".
+
+**Phase 2b (proposed instead):** use `/g2p` in the app. Each found word shows how close the voice already is (a
+score); words above the minimum move to "the voice already says it"; for words below it, generate respellings from the
+reference sounds, score each with `/g2p`, and suggest the best plain-spelling rule next to the exact-sounds rule.
