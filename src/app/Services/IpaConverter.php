@@ -109,6 +109,8 @@ final class IpaConverter
         $seenVowel = false;
         foreach ($chars as $i => $c) {
             if ($c === 'ˈ' || $c === 'ˌ') {
+                // after the opening consonants of a syllable (misaki writes kˈɛɹə, twˈɛn): it marks the syllable being built
+                if (!$seenVowel) { if ($c === 'ˈ') $stressNext = true; continue; }
                 $carry = '';
                 // written after the consonant that starts the stressed syllable (həbˈɑnə): that consonant moves over
                 $cur = preg_split('//u', $current, -1, PREG_SPLIT_NO_EMPTY) ?: [];

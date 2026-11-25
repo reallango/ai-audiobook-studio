@@ -29,6 +29,7 @@ check('IPA to the voice\'s sounds', [IpaConverter::toKokoro('/ˈhætəɹəs/'), 
 check('sounds English lacks become the nearest English ones', IpaConverter::toKokoro('sjeɱˈfweɣos'), 'sjAmˈfwAɡOs');
 check('Wikipedia\'s IPAc-en codes', IpaConverter::fromIpacEn(['b', '@', "'", 'dZ', 'oʊr', '@', 'n', 'US', 'lang=x']), 'bəˈdʒoʊrən');
 check('readable respellings, stressed syllable in capitals', [IpaConverter::respell('həbˈɑnə'), IpaConverter::respell('ˈhætəɹəs'), IpaConverter::respell('mɑˈtɑnsɑs')], ['huh-BAH-nuh', 'HA-tuh-ruhs', 'mah-TAHN-sahs']);
+check('a stress mark after the opening consonants marks that syllable (as the voice writes it)', [IpaConverter::respell('kˈɛɹəlInz'), IpaConverter::respell('twˈɛnti'), IpaConverter::respell('sˈu')], ['KEH-ruh-leyenz', 'TWEHN-tee', 'SOO']);
 check('the spoken form of a rule carries the exact sounds', IpaConverter::markup('Habana', 'həbˈɑnə'), '[Habana](/həbˈɑnə/)');
 check('nothing usable gives nothing', IpaConverter::toKokoro('/ʔ/'), '');
 
