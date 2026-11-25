@@ -26,9 +26,10 @@ final class PronCheckService
     }
 
     /** Queues a check of the book's flagged words. @param list<string> $kinds */
-    public function start(string $projectId, array $kinds, bool $recheck = false, ?string $region = null, bool $voiceOnly = false): array
+    public function start(string $projectId, array $kinds, bool $recheck = false, ?string $region = null, bool $voiceOnly = false, ?string $subject = null): array
     {
         if ($region !== null) $this->setRegion($projectId, $region);
+        if ($subject !== null) $this->setSubject($projectId, $subject);
         if ($voiceOnly) {
             if (!PronCheckClient::configured()) throw new InvalidArgumentException('The pronunciation checker is not set up (see Diagnostics).');
             return (new TaskService())->enqueue($projectId, 'pron_check', ['voice_only' => true]);
@@ -99,6 +100,19 @@ final class PronCheckService
         $this->db()->prepare('UPDATE projects SET pron_region=:r WHERE id=:id')->execute(['r' => $region, 'id' => $projectId]);
     }
 
+    /** What the book is about ("Star Trek"): names are searched for with it first. */
+    public function subject(string $projectId): string
+    {
+        return (string) ($this->project($projectId)['pron_subject'] ?? '');
+    }
+
+    public function setSubject(string $projectId, string $subject): void
+    {
+        $subject = trim((string) preg_replace('/\s+/u', ' ', $subject));
+        if (mb_strlen($subject) > 80) throw new InvalidArgumentException('The subject can be at most 80 characters.');
+        $this->db()->prepare('UPDATE projects SET pron_subject=:s WHERE id=:id')->execute(['s' => $subject, 'id' => $projectId]);
+    }
+
     /**
      * Checks the words one by one, storing each result as it comes. $progress(done, total) is told after each word.
      * Where a word is in several languages, the one the book uses most for its other words is chosen; when every word
@@ -116,10 +130,11 @@ final class PronCheckService
         $context = trim($project['title'] . ' ' . (new IntroService())->author($projectId));
         $words = $this->words($projectId, $params['kinds'] ?? self::DEFAULT_KINDS, !empty($params['recheck']));
         $region = $this->region($projectId);
+        $subject = $this->subject($projectId);
         $rank = $this->languageCounts($projectId);
         $looked = [];
         foreach ($words as $i => $w) {
-            $r = $this->lookup->find($w['text'], $context);
+            $r = $this->lookup->find($w['text'], $context, $subject);
             foreach (array_unique(array_column(is_array($r['options'] ?? null) ? $r['options'] : [], 'lang')) as $lang) if ($lang !== 'en') $rank[$lang] = ($rank[$lang] ?? 0) + 1;
             $looked[] = [$w, $r];
             $this->store($projectId, $w, PronLookup::pick($r, $region, $rank));

@@ -77,7 +77,12 @@ $pages = [
     'wikipedia|Matanzas' => ['query' => ['pages' => ['1' => ['title' => 'Matanzas', 'revisions' => [['slots' => ['main' => ['*' => "'''Matanzas''' ({{IPA|es-419|maˈtansas|lang}}) is a city"]]]]]]]],
     'wikipedia|Habana' => ['query' => ['pages' => ['2' => ['title' => 'Havana', 'revisions' => [['slots' => ['main' => ['*' => "'''Havana''' ({{IPAc-en|h|ə|ˈ|v|æ|n|ə}})"]]]]]]]],
     'search|Odo' => ['query' => ['search' => [['title' => 'Odo (Star Trek)']]]],
-    'wikipedia|Odo (Star Trek)' => ['query' => ['pages' => ['3' => ['title' => 'Odo (Star Trek)', 'revisions' => [['slots' => ['main' => ['*' => "'''Odo''' ({{IPAc-en|ˈ|oʊ|d|oʊ}}) is a character"]]]]]]]],
+    'wiktionary|Bajor' => ['parse' => ['text' => wikt(['Hungarian' => [['/ˈbɒjor/', '']]])]],
+    'wiktionary|Ferengi' => ['parse' => ['text' => wikt(['Italian' => [['/feˈrɛndʒi/', '']]])]],
+    'search|Bajor' => ['query' => ['search' => [['title' => 'Bajoran'], ['title' => 'Bajor (album)']]]],
+    'search|Ferengi' => ['query' => ['search' => [['title' => 'Quark (Star Trek)'], ['title' => 'Ferengi']]]],
+    'wikipedia|Ferengi' => ['query' => ['pages' => ['5' => ['title' => 'Ferengi', 'revisions' => [['slots' => ['main' => ['*' => "The '''Ferengi''' ({{IPAc-en|f|ə|ˈ|r|ɛ|ŋ|g|i}}) are a species"]]]]]]]],
+    'wikipedia|Odo (Star Trek)' =>['query' => ['pages' => ['3' => ['title' => 'Odo (Star Trek)', 'revisions' => [['slots' => ['main' => ['*' => "'''Odo''' ({{IPAc-en|ˈ|oʊ|d|oʊ}}) is a character"]]]]]]]],
 ];
 $fake = function (string $url) use (&$requests, $pages): array {
     $requests[] = $url;
@@ -99,6 +104,15 @@ $o = $lookup->find('Odo', 'Star Trek');
 check('found by search with the book\'s title: medium', [$o['status'], $o['confidence'], $o['source_title']], ['found', 'medium', 'Wikipedia: Odo (Star Trek)']);
 check('nothing anywhere', $lookup->find('Sisko', 'Star Trek')['status'], 'none');
 check('Wikipedia sending a name to a different name is low', $lookup->find('Pelews', 'My Book')['confidence'], 'low');
+$b = $lookup->find('Bajor', 'My Book');
+check('a name Wiktionary only has as a word of another language is low, and says so', [$b['confidence'], $b['lang'], str_contains($b['note'], 'Hungarian word')], ['low', 'hungarian', true]);
+check('... unless that language leads the book', [PronLookup::pick($b, 'americas', ['hungarian' => 12, 'es' => 2])['confidence'], PronLookup::pick($b, 'americas', ['hungarian' => 6, 'es' => 4])['confidence']], ['medium', 'low']);
+check('the book\'s leading language needs 5 words and twice the next', [PronLookup::leadingLanguage(['es' => 9, 'fr' => 2, 'en' => 40]), PronLookup::leadingLanguage(['es' => 4]), PronLookup::leadingLanguage([])], ['es', '', '']);
+$f = $lookup->find('Ferengi', 'My Book', 'Star Trek');
+check('with a subject, a name\'s own page found with it comes first: high for English', [$f['confidence'], $f['source_title'], $f['ipa']], ['high', 'Wikipedia: Ferengi', 'fəˈrɛŋgi']);
+check('... a search hit that only mentions the name is not taken', $lookup->find('Bajor', 'My Book', 'Star Trek')['source_title'], 'Wiktionary: Bajor');
+check('without a subject, the same name is looked up as before', $lookup->find('Ferengi', 'My Book')['source_title'], 'Wiktionary: Ferengi');
+check('a page title\'s qualifier is not part of the name', PronLookup::withoutQualifier('Rom (Star Trek)'), 'Rom');
 $before = count($requests);
 $lookup->find('Hatteras', 'My Book');
 check('an answer is looked up once, then remembered', count($requests), $before);

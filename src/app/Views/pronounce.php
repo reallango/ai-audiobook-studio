@@ -141,6 +141,8 @@ $fromTag = static function (array $r): array {
             <select name="region" style="width: auto">
               <?php foreach (\App\Services\PronCheckService::REGIONS as $code => $label): ?><option value="<?= e($code) ?>" <?= ($checkRegion ?? 'americas') === $code ? 'selected' : '' ?>><?= e($label) ?></option><?php endforeach; ?>
             </select></label>
+          <label class="quiet" style="display: flex; gap: 6px; align-items: center" title="What the book is about, for example Star Trek. Names are looked up with it first, so Bajor is the planet, not a Hungarian word. Leave empty for a book set in the real world.">About
+            <input type="text" name="subject" maxlength="80" value="<?= e((string) ($checkSubject ?? '')) ?>" placeholder="e.g. Star Trek" style="width: 140px"></label>
           <?php if ($found || $missing || $ordinary || $already): ?><label class="quiet" style="display: flex; gap: 6px; align-items: center"><input type="checkbox" name="recheck" value="1"> check the old ones again</label><?php endif; ?>
           <button type="submit" <?= $checkRunning ? 'disabled' : '' ?> title="Looks up names and odd spellings on Wiktionary and Wikipedia, about one word a second, in the background"><?= $checkRunning ? 'Checking online…' : 'Check pronunciations online' ?></button>
         </form>

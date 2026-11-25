@@ -31,14 +31,18 @@ final class PronLookup
     /**
      * @return array{status:string,ipa:string,lang:string,confidence:string,source_title:string,source_url:string,note:string}
      */
-    public function find(string $word, string $context = ''): array
+    public function find(string $word, string $context = '', string $subject = ''): array
     {
         $word = trim($word);
-        $key = 'v2|' . mb_strtolower($word) . '|' . mb_strtolower(trim($context));
+        $subject = trim($subject);
+        $key = 'v2|' . mb_strtolower($word) . '|' . mb_strtolower(trim($context)) . ($subject !== '' ? '|s:' . mb_strtolower($subject) : '');
         $cached = $this->cached($key);
         if ($cached !== null) return $cached;
 
-        $result = $this->wiktionary($word) ?? $this->wikipediaPage($word) ?? $this->wikipediaSearch($word, $context) ?? self::none();
+        // a name in a book about something (Star Trek's Bajor, Ferengi) is that thing's name before it is a word elsewhere
+        $name = $subject !== '' && preg_match('/^\p{Lu}/u', $word) === 1;
+        $result = ($name ? $this->subjectSearch($word, $subject) : null)
+            ?? $this->wiktionary($word) ?? $this->wikipediaPage($word) ?? $this->wikipediaSearch($word, $context) ?? self::none();
         if ($result['status'] !== 'error') $this->store($key, $result);
         return $result;
     }
@@ -90,7 +94,27 @@ final class PronLookup
         $result['lang'] = $best['lang'];
         $result['confidence'] = $best['lang'] === 'en' && $own ? 'high' : 'medium';
         $result['accent'] = (string) $best['qual'];
+        // a name that Wiktionary only has as a word of another language (Bajor in Hungarian, Jadzia in Polish) is most
+        // likely not that word, unless the book is full of that language (a Spanish name in a book set in Cuba)
+        $name = $own && empty($result['ordinary']);
+        if ($name && $best['lang'] !== 'en' && $best['lang'] !== self::leadingLanguage($langRank)) {
+            $result['confidence'] = 'low';
+            $result['note'] = 'Wiktionary has "' . trim(str_replace('Wiktionary:', '', (string) ($result['source_title'] ?? ''))) . '" as a ' . self::languageName((string) $best['lang'])
+                . ' word; it may not be the name in this book.';
+        } elseif ($own) {
+            $result['note'] = '';
+        }
         return $result;
+    }
+
+    /** The language most of the book's other words come from: at least 5 words, and twice as many as the next. Empty if none. @param array<string,int> $langRank */
+    public static function leadingLanguage(array $langRank): string
+    {
+        unset($langRank['en']);
+        arsort($langRank);
+        $counts = array_values($langRank);
+        if ($counts === [] || $counts[0] < 5 || (isset($counts[1]) && $counts[0] < 2 * $counts[1])) return '';
+        return (string) array_key_first($langRank);
     }
 
     /**
@@ -120,6 +144,34 @@ final class PronLookup
         return self::found($ipa, $lang, $lang === 'en' && $same ? 'high' : ($variant ? 'medium' : 'low'), 'Wikipedia: ' . $title, self::wikiUrl($title),
             $same ? '' : ($variant ? 'Wikipedia sends "' . $word . '" to "' . $title . '", another spelling; the sounds are for that spelling.'
                 : 'Wikipedia sends "' . $word . '" to "' . $title . '", a different name; these are the sounds of "' . $title . '".'));
+    }
+
+    /**
+     * A Wikipedia search for the word and the book's subject, kept only when a page is named for the word itself
+     * ("Ferengi", "Rom (Star Trek)"), so a page that merely mentions it is not taken.
+     * @return array<string,string>|null
+     */
+    private function subjectSearch(string $word, string $subject): ?array
+    {
+        $json = $this->get('https://en.wikipedia.org/w/api.php?' . http_build_query(['action' => 'query', 'list' => 'search', 'srsearch' => $word . ' ' . $subject, 'srlimit' => 5, 'format' => 'json']));
+        $hits = $json !== null ? (json_decode($json, true)['query']['search'] ?? []) : [];
+        foreach ($hits as $hit) {
+            $title = (string) ($hit['title'] ?? '');
+            if (!self::same(self::withoutQualifier($title), $word)) continue;
+            $page = $this->wikipediaIntro($title);
+            if ($page === null || self::isDisambiguation($page[1])) continue;
+            [$ipa, $lang] = self::ipaFromWikipedia($page[1]);
+            if ($ipa === '') continue;
+            return self::found($ipa, $lang, $lang === 'en' ? 'high' : 'medium', 'Wikipedia: ' . $page[0], self::wikiUrl($page[0]),
+                'Found by searching Wikipedia for "' . $word . ' ' . $subject . '".');
+        }
+        return null;
+    }
+
+    /** A page title without its bracketed qualifier: "Rom (Star Trek)" -> "Rom". */
+    public static function withoutQualifier(string $title): string
+    {
+        return trim((string) preg_replace('/\s*\([^()]*\)$/u', '', $title));
     }
 
     /** @return array<string,string>|null */

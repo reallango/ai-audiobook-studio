@@ -238,7 +238,7 @@ final class App
         $online = $tab === 'suggestions' && ($_GET['view'] ?? '') === 'online';
         $checks = new \App\Services\PronCheckService();
         self::view('pronounce', [
-            'online' => $online, 'checkResults' => $checks->results($id), 'checkRunning' => (new \App\Services\TaskService())->isBusy($id, 'pron_check'), 'checkRegion' => $checks->region($id), 'checkMinimum' => $checks->minimum($id), 'checkerReady' => PronCheckClient::configured(),
+            'online' => $online, 'checkResults' => $checks->results($id), 'checkRunning' => (new \App\Services\TaskService())->isBusy($id, 'pron_check'), 'checkRegion' => $checks->region($id), 'checkSubject' => $checks->subject($id),'checkMinimum' => $checks->minimum($id), 'checkerReady' => PronCheckClient::configured(),
             'project' => $project, 'tab' => $tab, 'own' => $own, 'inherited' => $inherited, 'voice' => $voice,
             'kind' => $kind, 'suggestions' => $suggestions, 'kindCounts' => $kindCounts, 'hasDictionary' => TextCheckService::dictionary() !== null,
             'linked' => $linked, 'available' => array_values(array_filter($svc->sets(), static fn (array $s): bool => !in_array($s['id'], $linkedIds, true))),
@@ -276,7 +276,7 @@ final class App
             switch ((string) ($_POST['action'] ?? '')) {
                 case 'start':
                     $kinds = array_values(array_map('strval', is_array($_POST['kinds'] ?? null) ? $_POST['kinds'] : []));
-                    $svc->start($id, $kinds, ($_POST['recheck'] ?? '') === '1', isset($_POST['region']) ? (string) $_POST['region'] : null);
+                    $svc->start($id, $kinds, ($_POST['recheck'] ?? '') === '1', isset($_POST['region']) ? (string) $_POST['region'] : null, false, isset($_POST['subject']) ? (string) $_POST['subject'] : null);
                     self::flash('success', 'Checking pronunciations online in the background, about one word a second. The Activity button shows how far it is; the results appear here.');
                     break;
                 case 'make':
