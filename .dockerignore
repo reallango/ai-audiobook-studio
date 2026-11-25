@@ -12,3 +12,5 @@ src/storage/**
 *.epub
 *.sqlite*
 tests/
+
+pron-check

@@ -1,0 +1,18 @@
+services:
+  pron-check:
+    build: .
+    pull_policy: build
+    container_name: pron-check
+    restart: unless-stopped
+    ports:
+      - "8890:8890"
+    environment:
+      PRON_CHECK_API_KEY: ${PRON_CHECK_API_KEY:-}
+      KOKORO_URL: ${KOKORO_URL:-http://192.168.1.130:8880}
+      KOKORO_API_KEY: ${KOKORO_API_KEY:-}
+      PRON_CHECK_THREADS: ${PRON_CHECK_THREADS:-4}
+    volumes:
+      - pron-check-models:/models
+
+volumes:
+  pron-check-models:
