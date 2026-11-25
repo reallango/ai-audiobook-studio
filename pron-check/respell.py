@@ -42,6 +42,30 @@ def spell(sounds: list[str], choice: list[int], hyphens: bool) -> str:
     return "".join(parts)
 
 
+def word_variants(word: str, target: str) -> list[str]:
+    """
+    Small edits of the word as the book writes it, which the sound-by-sound search cannot reach one step at a time:
+    a hard g or c before e, i or y written so the voice keeps it hard (Ferengi -> Ferenghi, Cesar -> Kesar), each
+    alone and all together.
+    """
+    import itertools
+    import re
+    spots = []
+    if "ɡ" in target:
+        spots += [(m.start(), "gh") for m in re.finditer(r"g(?=[eiy])", word, re.I)]
+    if "k" in target:
+        spots += [(m.start(), "k") for m in re.finditer(r"c(?=[eiy])", word, re.I)]
+    out = []
+    for n in range(1, min(len(spots), 3) + 1):
+        for combo in itertools.combinations(spots, n):
+            text = word
+            for pos, rep in sorted(combo, reverse=True):
+                rep = rep.upper() if text[pos].isupper() else rep
+                text = text[:pos] + rep + text[pos + 1:]
+            out.append(text)
+    return out
+
+
 def best(target: str, word: str, g2p, score, tries: int = 60) -> dict | None:
     """The spelling whose reading is closest to target. g2p(text) -> phonemes; score(a, b) -> 0..100."""
     sounds = sounds_of(target)
@@ -72,5 +96,10 @@ def best(target: str, word: str, g2p, score, tries: int = 60) -> dict | None:
         text = cap(spell(sounds, choice, hyphens))
         if winner is None or current > winner[0]:
             winner = (current, text)
+    # the book's own spelling, lightly edited, often reads best and looks most like the name
+    for text in word_variants(word, target):
+        value = rate(text)
+        if value >= winner[0]:
+            winner = (value, text)
     text = winner[1]                                         # a name keeps its capital, as the book writes it
     return {"text": text, "reads": seen[winner[1]][1], "score": winner[0], "tried": len(seen)}
