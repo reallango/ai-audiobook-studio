@@ -113,6 +113,8 @@ check('with a subject, a name\'s own page found with it comes first: high for En
 check('... a search hit that only mentions the name is not taken', $lookup->find('Bajor', 'My Book', 'Star Trek')['source_title'], 'Wiktionary: Bajor');
 check('without a subject, the same name is looked up as before', $lookup->find('Ferengi', 'My Book')['source_title'], 'Wiktionary: Ferengi');
 check('a page title\'s qualifier is not part of the name', PronLookup::withoutQualifier('Rom (Star Trek)'), 'Rom');
+check('a qualified page counts only when it is about the subject', [PronLookup::qualifierFits('Rom (Star Trek)', 'Star Trek'), PronLookup::qualifierFits('Odo (Star Trek: Deep Space Nine)', 'Star Trek'), PronLookup::qualifierFits('Tycho (lunar crater)', 'Star Trek'), PronLookup::qualifierFits('Ferengi', 'Star Trek')],
+    [true, true, false, true]);
 $before = count($requests);
 $lookup->find('Hatteras', 'My Book');
 check('an answer is looked up once, then remembered', count($requests), $before);

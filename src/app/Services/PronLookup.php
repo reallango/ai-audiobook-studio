@@ -157,7 +157,7 @@ final class PronLookup
         $hits = $json !== null ? (json_decode($json, true)['query']['search'] ?? []) : [];
         foreach ($hits as $hit) {
             $title = (string) ($hit['title'] ?? '');
-            if (!self::same(self::withoutQualifier($title), $word)) continue;
+            if (!self::same(self::withoutQualifier($title), $word) || !self::qualifierFits($title, $subject)) continue;
             $page = $this->wikipediaIntro($title);
             if ($page === null || self::isDisambiguation($page[1])) continue;
             [$ipa, $lang] = self::ipaFromWikipedia($page[1]);
@@ -172,6 +172,14 @@ final class PronLookup
     public static function withoutQualifier(string $title): string
     {
         return trim((string) preg_replace('/\s*\([^()]*\)$/u', '', $title));
+    }
+
+    /** A title with no qualifier, or one that names the subject: "Rom (Star Trek)" fits Star Trek, "Tycho (lunar crater)" does not. */
+    public static function qualifierFits(string $title, string $subject): bool
+    {
+        if (!preg_match('/\(([^()]*)\)$/u', $title, $m)) return true;
+        foreach (preg_split('/\s+/u', mb_strtolower($subject)) ?: [] as $part) if (mb_strlen($part) > 2 && mb_stripos($m[1], $part) !== false) return true;
+        return false;
     }
 
     /** @return array<string,string>|null */
