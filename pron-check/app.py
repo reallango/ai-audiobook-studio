@@ -88,7 +88,10 @@ def recognize(data: bytes, model_name: str = DEFAULT_MODEL) -> str:
 # ----- scoring -----
 
 # Kokoro (misaki) writes diphthongs and affricates as single letters; back to IPA before comparing
-TO_IPA = {"A": "eɪ", "I": "aɪ", "O": "oʊ", "W": "aʊ", "Y": "ɔɪ", "ʤ": "dʒ", "ʧ": "tʃ", "ᵊ": "ə", "Q": "əʊ"}
+TO_IPA = {"A": "eɪ", "I": "aɪ", "O": "oʊ", "W": "aʊ", "Y": "ɔɪ", "ʤ": "dʒ", "ʧ": "tʃ", "ᵊ": "ə", "Q": "əʊ", "T": "t"}
+# a sound swapped for another costs this many times the share of features that differ (capped at 1, like a missing
+# sound): panphon's own distance charges a vowel change only about a tenth, so a wrong reading still scored ~95
+SUB_WEIGHT = float(os.environ.get("PRON_CHECK_SUB_WEIGHT", "5"))
 DROP = "ˈˌːˑ.‿͡ -'\"/[]()"
 
 _dist = None
@@ -104,15 +107,27 @@ def plain(ipa: str) -> str:
 
 def score(reference: str, candidate: str) -> dict:
     """0-100: 100 = the same sounds; a sound swapped for a similar one costs less than for a very different one."""
-    global _dist, _ft
-    if _dist is None:
+    global _ft
+    if _ft is None:
         import panphon
-        import panphon.distance
-        _dist = panphon.distance.Distance()
         _ft = panphon.FeatureTable()
     ref, cand = plain(reference), plain(candidate)
-    n = max(len(_ft.ipa_segs(ref)), len(_ft.ipa_segs(cand)), 1)
-    d = _dist.feature_edit_distance(ref, cand)
+    a = _ft.word_to_vector_list(ref, numeric=True)
+    b = _ft.word_to_vector_list(cand, numeric=True)
+
+    def sub(x, y):
+        differ = sum(1 for p, q in zip(x, y) if p != q)
+        return min(1.0, SUB_WEIGHT * differ / max(len(x), 1))
+
+    # edit distance: a missing or extra sound costs 1, a swapped one by how different it is
+    prev = [float(j) for j in range(len(b) + 1)]
+    for i in range(1, len(a) + 1):
+        cur = [float(i)] + [0.0] * len(b)
+        for j in range(1, len(b) + 1):
+            cur[j] = min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + sub(a[i - 1], b[j - 1]))
+        prev = cur
+    d = prev[-1]
+    n = max(len(a), len(b), 1)
     return {"score": round(max(0.0, 100.0 * (1.0 - d / n)), 1), "reference": ref, "candidate": cand, "distance": round(d, 3)}
 
 
