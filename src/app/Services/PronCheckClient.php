@@ -80,6 +80,35 @@ final class PronCheckClient
         return $out;
     }
 
+    /**
+     * Plain spellings that make the voice say what someone wants. $how is a respelling with the stressed part in
+     * capitals ("fuh-RENG-ghee"), or IPA between slashes ("/fəˈɹɛŋɡi/").
+     * @return array{target:string,target_say:string,word_reads:string,word_say:string,word_score:float,spellings:list<array{text:string,reads:string,say:string,score:float}>}
+     */
+    public function find(string $word, string $how, bool $british = false): array
+    {
+        $word = trim($word);
+        $how = trim($how);
+        if ($word === '' || $how === '') throw new \InvalidArgumentException('Fill in the word and how it should sound.');
+        if (mb_strlen($word) > 100 || mb_strlen($how) > 100) throw new \InvalidArgumentException('Keep the word and how it sounds under 100 characters.');
+        $body = ['word' => $word, 'british' => $british];
+        if (preg_match('#^[/\[].*[/\]]$#u', $how)) {
+            $sounds = IpaConverter::toKokoro($how);
+            if ($sounds === '') throw new \InvalidArgumentException('Those sounds could not be read. Write it like fuh-RENG-ghee instead.');
+            $body['sounds'] = $sounds;
+        } else {
+            $body['say'] = $how;
+        }
+        $r = $this->call('/find', $body, 120);
+        $spellings = [];
+        foreach ($r['spellings'] ?? [] as $s) {
+            $spellings[] = ['text' => (string) $s['text'], 'reads' => (string) $s['reads'], 'say' => IpaConverter::respell((string) $s['reads']), 'score' => (float) $s['score']];
+        }
+        return ['target' => (string) ($r['target'] ?? ''), 'target_say' => IpaConverter::respell((string) ($r['target'] ?? '')),
+            'word_reads' => (string) ($r['word_reads'] ?? ''), 'word_say' => IpaConverter::respell((string) ($r['word_reads'] ?? '')), 'word_score' => (float) ($r['word_score'] ?? 0),
+            'spellings' => $spellings];
+    }
+
     /** @return array<string,mixed> */
     private function call(string $path, array $body, int $timeout): array
     {

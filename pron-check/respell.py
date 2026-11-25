@@ -128,7 +128,7 @@ def best(target: str, word: str, g2p, score, tries: int = 60, extra: tuple = (),
     out = {"text": text, "reads": seen[text][1], "score": winner[0], "tried": len(seen)}
     if alternatives:
         # the next best that read differently from the winner and each other
-        others, readings = [], {seen[text][1]}
+        others, readings = [], {seen[text][1], g2p(word)}    # nothing that reads like the word as written
         for t, (value, reads) in sorted(seen.items(), key=lambda kv: -kv[1][0]):
             if reads in readings or t == word:
                 continue

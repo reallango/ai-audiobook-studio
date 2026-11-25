@@ -25,7 +25,7 @@ final class App
     public static function run(): void
     {
         $route=trim((string)($_GET['page']??'projects'),'/');
-        try{match($route){'api-health'=>self::json(self::health()),'diagnostics'=>self::view('diagnostics'),'projects','home',''=>self::projects(),'quick-import'=>self::quickImport(),'arrange'=>self::arrange(),'proofread'=>self::proofread(),'pronounce'=>self::pronounce(),'intro-settings'=>self::introSettings(),'pron-check'=>self::pronCheck(),'pron-checker'=>self::pronChecker(),'arrange-action'=>self::arrangeAction(),'section-text'=>self::sectionText(),'project-create'=>self::createProject(),'project'=>self::project(),'epub-upload'=>self::epubUpload(),'epub-analyze'=>self::epubAnalyze(),'source-sections'=>self::sourceSections(),'source-section'=>self::sourceSection(),'project-archive'=>self::archiveProject(),'project-restore'=>self::restoreProject(),'project-delete'=>self::deleteProject(),'voice-lab'=>self::voiceLab(),'voice-preview'=>self::voicePreview(),'pronunciation'=>self::pronunciation(),'rulesets'=>self::pronunciation(),'pronunciation-rule'=>self::pronunciationRule(),'pronunciation-example'=>self::pronunciationExample(),'rulesets-regex'=>self::regexPreview(),'textchecks'=>self::textChecks(),'activity'=>self::activity(),'section-preview'=>self::sectionPreview(),'chapters'=>self::chapters(),'chapter-review'=>self::chapterReview(),'chapter-audio'=>self::chapterAudio(),'chapter-text'=>self::chapterText(),'audio'=>self::audio(),'export'=>self::export(),default=>self::notFound()};}
+        try{match($route){'api-health'=>self::json(self::health()),'diagnostics'=>self::view('diagnostics'),'projects','home',''=>self::projects(),'quick-import'=>self::quickImport(),'arrange'=>self::arrange(),'proofread'=>self::proofread(),'pronounce'=>self::pronounce(),'intro-settings'=>self::introSettings(),'pron-check'=>self::pronCheck(),'pron-checker'=>self::pronChecker(),'pron-find'=>self::pronFind(),'arrange-action'=>self::arrangeAction(),'section-text'=>self::sectionText(),'project-create'=>self::createProject(),'project'=>self::project(),'epub-upload'=>self::epubUpload(),'epub-analyze'=>self::epubAnalyze(),'source-sections'=>self::sourceSections(),'source-section'=>self::sourceSection(),'project-archive'=>self::archiveProject(),'project-restore'=>self::restoreProject(),'project-delete'=>self::deleteProject(),'voice-lab'=>self::voiceLab(),'voice-preview'=>self::voicePreview(),'pronunciation'=>self::pronunciation(),'rulesets'=>self::pronunciation(),'pronunciation-rule'=>self::pronunciationRule(),'pronunciation-example'=>self::pronunciationExample(),'rulesets-regex'=>self::regexPreview(),'textchecks'=>self::textChecks(),'activity'=>self::activity(),'section-preview'=>self::sectionPreview(),'chapters'=>self::chapters(),'chapter-review'=>self::chapterReview(),'chapter-audio'=>self::chapterAudio(),'chapter-text'=>self::chapterText(),'audio'=>self::audio(),'export'=>self::export(),default=>self::notFound()};}
         catch(Throwable $error){error_log($error->__toString());http_response_code(500);self::view('error',['message'=>config('app.debug',false)?$error->getMessage():'The request could not be completed. Check the application log for details.']);}
     }
     private static function voiceLab():void
@@ -361,6 +361,24 @@ final class App
             }
         }
         self::json(['ok' => true, 'valid' => true, 'error' => '', 'count' => count($sentences), 'capped' => count($sentences) >= $cap, 'examples' => $examples]);
+    }
+
+    /** POST JSON {_token, word, how, voice?} -> spellings the voice reads as "how" (the sound test's "Find a spelling"). */
+    private static function pronFind():void
+    {
+        $fail = static function (int $status, string $message): void { self::json(['ok' => false, 'message' => $message], $status); };
+        if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') { header('Allow: POST'); $fail(405, 'POST is required.'); return; }
+        $p = json_decode((string) file_get_contents('php://input'), true);
+        if (!is_array($p)) { $fail(400, 'The request was not valid JSON.'); return; }
+        if (!Csrf::validate(isset($p['_token']) ? (string) $p['_token'] : null)) { $fail(419, 'Security token expired. Reload the page.'); return; }
+        try {
+            $british = str_starts_with((string) ($p['voice'] ?? ''), 'b');
+            self::json(['ok' => true] + (new PronCheckClient())->find((string) ($p['word'] ?? ''), (string) ($p['how'] ?? ''), $british));
+        } catch (\InvalidArgumentException $error) {
+            $fail(422, $error->getMessage());
+        } catch (\RuntimeException $error) {
+            $fail(502, $error->getMessage());
+        }
     }
 
     /** POST JSON {_token, layer, ref, pattern, replacement, whole_word?, case_sensitive?, note?} -> saves one rule (used by the chapter workbench). */

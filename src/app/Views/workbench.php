@@ -18,6 +18,17 @@ $wbProject ??= null;
       <label>Written <input data-wb-written maxlength="100" placeholder="Bajor"></label>
       <label>Spoken <input data-wb-spoken maxlength="200" placeholder="Bay-jor"></label>
     </div>
+    <?php if (\App\Services\PronCheckClient::configured()): ?>
+      <details class="wb-find" data-wb-find-box data-find="<?= e(base_url('pron-find')) ?>">
+        <summary>Find a spelling that sounds right</summary>
+        <p class="muted">Type how the word should sound, with the stressed part in capitals. The checker tries spellings and shows how the voice reads each, without making audio.</p>
+        <div class="wb-row">
+          <label>Should sound like <input data-wb-how maxlength="100" placeholder="fuh-RENG-ghee, or /fəˈɹɛŋɡi/"></label>
+          <button type="button" class="button secondary" data-wb-find>Find</button>
+        </div>
+        <div data-wb-found aria-live="polite"></div>
+      </details>
+    <?php endif; ?>
     <label class="wb-text">Sentence to hear <textarea data-wb-text rows="3" maxlength="3000" placeholder="Pick a word, or type a sentence"></textarea></label>
     <div class="wb-row wb-examples">
       <button type="button" class="button secondary" data-wb-prev title="Previous example from the book" aria-label="Previous example">&larr;</button>

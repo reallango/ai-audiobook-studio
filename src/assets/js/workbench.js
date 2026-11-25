@@ -161,6 +161,46 @@
       else status.textContent = `No sentence in the book contains “${word}” as a word.`;
       showCount();
     });
+    // ----- find a spelling: the checker tries spellings for a pronunciation typed here -----
+    const findBox = field('[data-wb-find-box]');
+    if (findBox) {
+      const how = findBox.querySelector('[data-wb-how]');
+      const findButton = findBox.querySelector('[data-wb-find]');
+      const found = findBox.querySelector('[data-wb-found]');
+      const line = (...parts) => { const p = document.createElement('p'); p.className = 'muted'; p.append(...parts); return p; };
+      const strong = t => { const b = document.createElement('strong'); b.textContent = t; return b; };
+      const runFind = async () => {
+        const word = written.value.trim();
+        if (!word) { found.replaceChildren(line('Fill in "Written" first.')); return; }
+        if (!how.value.trim()) { found.replaceChildren(line('Type how it should sound, for example fuh-RENG-ghee.')); how.focus(); return; }
+        findButton.disabled = true;
+        found.replaceChildren(line('Trying spellings…'));
+        try {
+          const r = await (await post(findBox.dataset.find, wb.dataset.token, {word, how: how.value.trim(), voice: wb.dataset.voice})).json();
+          const rows = [line('Wanted: ', strong(r.target_say), `. As written, the voice says ${r.word_say} (${Math.round(r.word_score)}).`)];
+          const list = document.createElement('div');
+          list.className = 'wb-spellings';
+          for (const s of r.spellings) {
+            const b = document.createElement('button');
+            b.type = 'button';
+            b.className = 'chip';
+            b.title = 'Put this in "Spoken" and hear it';
+            b.append(strong(s.text), ` says ${s.say} · ${Math.round(s.score)}`);
+            b.addEventListener('click', () => { spoken.value = s.text; runHear(true); });
+            list.append(b);
+          }
+          if (!r.spellings.length) rows.push(line('No spelling came close.'));
+          found.replaceChildren(...rows, list, line('Scores compare readings, not audio: listen before saving.'));
+        } catch (error) {
+          found.replaceChildren(line(error.message));
+        } finally {
+          findButton.disabled = false;
+        }
+      };
+      findButton.addEventListener('click', runFind);
+      how.addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); runFind(); } });
+    }
+
     if (prevButton) prevButton.addEventListener('click', () => stepExample(-1));
     if (nextButton) nextButton.addEventListener('click', () => stepExample(1));
     showCount();

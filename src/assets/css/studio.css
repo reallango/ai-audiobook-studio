@@ -441,3 +441,9 @@ input:not([type="checkbox"]):not([type="radio"]):not([type="file"]), select, tex
 }
 /* a page whose side column only holds a small summary keeps it narrow */
 @media (min-width: 1100px) { .split-view.side-narrow { grid-template-columns: minmax(0, 1fr) minmax(280px, 340px); } }
+
+/* sound test: find a spelling */
+.wb-find { margin: 8px 0; }
+.wb-find summary { cursor: pointer; font-weight: 600; font-size: 13px; }
+.wb-spellings { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; margin: 6px 0; }
+.wb-spellings .chip { text-align: left; height: auto; min-height: 30px; }

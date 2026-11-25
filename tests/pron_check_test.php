@@ -195,6 +195,22 @@ try { $down->compareWithVoice('p'); } catch (RuntimeException $e) { $threw = $e-
 check('a checker that is away is reported plainly', $threw, 'The pronunciation checker is not answering.');
 check('the key is kept when the form leaves it blank', (function (): string { PronCheckClient::save('http://checker.test:8890', ''); return PronCheckClient::key(); })(), 'secret');
 
+// ----- find a spelling for a typed pronunciation -----
+$asked = [];
+$finder = new PronCheckClient(function (string $url, string $json, array $o) use (&$asked): array {
+    $asked[] = [$url, json_decode($json, true)];
+    return ['status' => 200, 'body' => json_encode(['target' => 'fəɹˈɛŋɡi', 'word_reads' => 'fˈɛɹɛŋɡi', 'word_score' => 85.0,
+        'spellings' => [['text' => 'Ferenghi', 'reads' => 'fəɹˈɛŋɡi', 'score' => 100.0]]], JSON_UNESCAPED_UNICODE)];
+});
+$fr = $finder->find('Ferengi', 'fuh-RENG-ghee');
+check('a typed respelling is sent as is, and the answers come back readable', [$asked[0][0], $asked[0][1]['say'] ?? null, $fr['spellings'][0]['text'], $fr['spellings'][0]['say'], $fr['word_say']],
+    ['http://checker.test:8890/find', 'fuh-RENG-ghee', 'Ferenghi', 'fuh-REHNG-gee', 'FEH-rehng-gee']);
+$finder->find('Ferengi', '/fəˈɹɛŋɡi/');
+check('IPA between slashes is sent as the voice\'s sounds', [$asked[1][1]['sounds'] ?? null, isset($asked[1][1]['say'])], ['fəˈɹɛŋɡi', false]);
+$threw = '';
+try { $finder->find('Ferengi', ''); } catch (InvalidArgumentException $e) { $threw = $e->getMessage(); }
+check('how it should sound is needed', $threw, 'Fill in the word and how it should sound.');
+
 @unlink($db);
 echo $failures === 0 ? "\nall passed\n" : "\n$failures failed\n";
 exit($failures === 0 ? 0 : 1);
