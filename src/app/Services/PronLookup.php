@@ -12,7 +12,8 @@ use App\Core\Database;
  */
 final class PronLookup
 {
-    public const USER_AGENT = 'AudiobookStudio/0.1 (pronunciation lookup; self-hosted)';
+    /** Wikimedia allows far more requests to clients that say who they are with a URL or email (200 a minute, not 10). */
+    public const USER_AGENT = 'AudiobookStudioBot/0.1 (https://github.com/reallango/ai-audiobook-studio; pronunciation lookup)';
     private const CACHE_DAYS = 30;
 
     /** @var callable(string):array{status:int,body:string} */
@@ -296,7 +297,9 @@ final class PronLookup
             $r = ($this->fetch)($url);
             if ($r['status'] === 200) return $r['body'];
             if ($r['status'] !== 429 && $r['status'] < 500) return null;
-            if ($this->spacing > 0) sleep(min(60, 10 * ($attempt + 1)));    // back off, then try again
+            // wait as long as Wikimedia asks (Retry-After), else 5 s doubling; then try again
+            $asked = (int) ($r['retry_after'] ?? 0);
+            if ($this->spacing > 0) sleep(min(60, $asked > 0 ? $asked : 5 * 2 ** $attempt));
         }
         throw new \RuntimeException('Wikimedia is not answering right now (too many requests). Try again later.');
     }
@@ -307,8 +310,12 @@ final class PronLookup
         $context = stream_context_create(['http' => ['method' => 'GET', 'header' => 'User-Agent: ' . self::USER_AGENT . "\r\nAccept: application/json\r\n", 'timeout' => 15, 'ignore_errors' => true]]);
         $body = @file_get_contents($url, false, $context);
         $status = 0;
-        foreach ($http_response_header ?? [] as $h) if (preg_match('#^HTTP/\S+\s+(\d{3})#', $h, $m)) $status = (int) $m[1];
-        return ['status' => $body === false ? 0 : $status, 'body' => $body === false ? '' : $body];
+        $retry = 0;
+        foreach ($http_response_header ?? [] as $h) {
+            if (preg_match('#^HTTP/\S+\s+(\d{3})#', $h, $m)) $status = (int) $m[1];
+            if (preg_match('#^Retry-After:\s*(\d+)#i', $h, $m)) $retry = (int) $m[1];
+        }
+        return ['status' => $body === false ? 0 : $status, 'body' => $body === false ? '' : $body, 'retry_after' => $retry];
     }
 
     /** @return array<string,string>|null */
