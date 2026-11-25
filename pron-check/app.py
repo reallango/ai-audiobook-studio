@@ -4,6 +4,9 @@ pron-check: listens to how the Kokoro voice says a word and scores it against a 
   POST /g2p        {"text": "..."}                         -> the sounds Kokoro will use (misaki, Kokoro's own G2P)
   POST /recognize  WAV body                                -> the sounds heard in the audio (phoneme recognition)
   POST /score      {"reference": "...", "candidate": "..."} -> 0-100, articulatory-feature edit distance
+  POST /assess     {"items": [{"word", "sounds"?}], "british": false, "minimum": 85}
+                   -> per word: how the voice reads it, how close that is to the sounds (stress counts), and, when below
+                      the minimum, the plain spelling the voice reads closest to the sounds
   POST /measure    {"voice": "am_michael", "models": [...]} -> the phase 2 go/no-go measurement (see measure.py)
   GET  /health
 
@@ -35,16 +38,15 @@ def require_key(request: Request) -> None:
 
 # ----- the voice's own reading (misaki) -----
 
-_g2p = None
+_g2p: dict = {}
 
 
-def g2p(text: str) -> str:
-    global _g2p
-    if _g2p is None:
+def g2p(text: str, british: bool = False) -> str:
+    if british not in _g2p:
         from misaki import en, espeak
-        _g2p = en.G2P(trf=False, british=False, fallback=espeak.EspeakFallback(british=False))
-    phonemes, _ = _g2p(text)
-    return phonemes
+        _g2p[british] = en.G2P(trf=False, british=british, fallback=espeak.EspeakFallback(british=british))
+    phonemes, _ = _g2p[british](text)
+    return phonemes.strip()
 
 
 # ----- hearing sounds in audio (wav2vec2 phoneme CTC) -----
@@ -105,6 +107,26 @@ def plain(ipa: str) -> str:
     return out.replace("ᵻ", "ɪ").replace("ɚ", "əɹ").replace("ɝ", "ɜɹ").replace("r", "ɹ").replace("ɾ", "t")
 
 
+def stressed_syllable(ipa: str) -> int:
+    """Which syllable (counted by vowels before it) carries the main stress; -1 when none is marked."""
+    at = ipa.find("ˈ")
+    if at < 0:
+        return -1
+    return sum(1 for c in plain(ipa[:at]) if c in "aeiouæɑɐɒɔəɛɜɪʊʌ")
+
+
+STRESS_PENALTY = float(os.environ.get("PRON_CHECK_STRESS_PENALTY", "12"))
+
+
+def compare(reference: str, reading: str) -> float:
+    """Sounds and stress: the score, less a penalty when the main stress falls on another syllable."""
+    value = score(reference, reading)["score"]
+    a, b = stressed_syllable(reference), stressed_syllable(reading)
+    if a >= 0 and b >= 0 and a != b:
+        value -= STRESS_PENALTY
+    return round(max(0.0, value), 1)
+
+
 def score(reference: str, candidate: str) -> dict:
     """0-100: 100 = the same sounds; a sound swapped for a similar one costs less than for a very different one."""
     global _ft
@@ -142,6 +164,17 @@ class ScoreIn(BaseModel):
     candidate: str
 
 
+class AssessItem(BaseModel):
+    word: str
+    sounds: str = ""
+
+
+class AssessIn(BaseModel):
+    items: list[AssessItem]
+    british: bool = False
+    minimum: float = 85
+
+
 class MeasureIn(BaseModel):
     voice: str = "am_michael"
     models: list[str] = [DEFAULT_MODEL]
@@ -169,6 +202,23 @@ async def route_recognize(request: Request, model: str = DEFAULT_MODEL):
 @app.post("/score", dependencies=[Depends(require_key)])
 def route_score(body: ScoreIn):
     return score(body.reference, body.candidate)
+
+
+@app.post("/assess", dependencies=[Depends(require_key)])
+def route_assess(body: AssessIn):
+    import respell
+    out = []
+    for item in body.items[:100]:
+        reads = g2p(item.word, body.british)
+        row = {"word": item.word, "voice": reads}
+        if item.sounds:
+            row["score"] = compare(item.sounds, reads)
+            if row["score"] < body.minimum:
+                alt = respell.best(item.sounds, item.word, lambda s: g2p(s, body.british), compare)
+                if alt and alt["score"] > row["score"]:
+                    row["spelling"] = alt
+        out.append(row)
+    return {"items": out}
 
 
 @app.post("/measure", dependencies=[Depends(require_key)])

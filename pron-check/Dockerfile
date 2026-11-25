@@ -8,7 +8,7 @@ RUN pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu 
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt && python -m spacy download en_core_web_sm
 
-COPY app.py measure.py ./
+COPY app.py measure.py respell.py ./
 ENV HF_HOME=/models
 EXPOSE 8890
 CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8890"]
