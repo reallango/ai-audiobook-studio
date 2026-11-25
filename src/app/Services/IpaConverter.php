@@ -58,6 +58,8 @@ final class IpaConverter
         $ipa = (string) preg_replace('#^[/\[]+|[/\]]+$#u', '', $ipa);
         $ipa = str_replace(['.', 'ː', 'ˑ', '‿', '(', ')', ' ', '-', '͡', '‍'], '', $ipa);
         $ipa = str_replace(["'"], ['ˈ'], $ipa);
+        // a vowel marked non-syllabic is a glide: fwe̯ / fu̯e -> fwe, i̯ -> j
+        $ipa = str_replace(["u\u{032F}", "ʊ\u{032F}", "i\u{032F}", "ɪ\u{032F}"], ['w', 'w', 'j', 'j'], $ipa);
         // combining marks (nasal ~, syllabic, dental...) carry no sound of their own here
         return (string) preg_replace('/\p{Mn}/u', '', $ipa);
     }
@@ -117,7 +119,10 @@ final class IpaConverter
                 continue;
             }
             $next = $chars[$i + 1] ?? '';
-            if (!$isVowel($c) && $seenVowel && $next !== '' && $isVowel($next) && $current !== '') { $syllables[] = $current; $current = ''; $seenVowel = false; }
+            $onset = $next !== '' && ($isVowel($next) || (($next === 'w' || $next === 'j') && $isVowel($chars[$i + 2] ?? '')));   // pur-kwa, not purk-wa
+            if (!$isVowel($c) && $seenVowel && $onset && $current !== '') { $syllables[] = $current; $current = ''; $seenVowel = false; }
+            // two vowels side by side are two syllables (the voice's diphthongs are single letters): si-uhs
+            elseif ($isVowel($c) && $seenVowel && $current !== '') { $syllables[] = $current; $current = ''; $seenVowel = false; }
             if ($stressNext) { $stressed[count($syllables)] = true; $stressNext = false; }
             $current .= $c;
             if ($isVowel($c)) $seenVowel = true;

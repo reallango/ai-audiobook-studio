@@ -34,7 +34,7 @@ final class PronLookup
     public function find(string $word, string $context = ''): array
     {
         $word = trim($word);
-        $key = 'v1|' . mb_strtolower($word) . '|' . mb_strtolower(trim($context));
+        $key = 'v2|' . mb_strtolower($word) . '|' . mb_strtolower(trim($context));
         $cached = $this->cached($key);
         if ($cached !== null) return $cached;
 
@@ -45,18 +45,65 @@ final class PronLookup
 
     // ----- sources -----
 
-    /** @return array<string,string>|null */
+    /**
+     * Wiktionary, read from the rendered page: its pronunciation templates (Spanish and French ones especially) only
+     * produce IPA when rendered. Every language's pronunciations are kept, with their accent labels, so the choice of
+     * language and accent can be made for the book (see pick()).
+     * @return array<string,mixed>|null
+     */
     private function wiktionary(string $word): ?array
     {
         foreach (array_unique([$word, mb_strtolower($word)]) as $i => $page) {
-            $text = $this->wikitext('https://en.wiktionary.org/w/api.php', $page);
-            if ($text === null) continue;
-            [$ipa, $lang] = self::ipaFromWiktionary($text);
-            if ($ipa === '') continue;
-            return self::found($ipa, $lang, $lang === 'en' && $i === 0 ? 'high' : 'medium', 'Wiktionary: ' . $page, 'https://en.wiktionary.org/wiki/' . rawurlencode(str_replace(' ', '_', $page)),
+            $html = $this->renderedPage('https://en.wiktionary.org/w/api.php', $page);
+            if ($html === null) continue;
+            $options = self::ipaFromWiktionaryHtml($html);
+            if ($options === []) continue;
+            $result = self::found($options[0]['ipa'], $options[0]['lang'], 'medium', 'Wiktionary: ' . $page, 'https://en.wiktionary.org/wiki/' . rawurlencode(str_replace(' ', '_', $page)),
                 $i > 0 ? 'Found as the ordinary word "' . $page . '".' : '');
+            $result['options'] = $options;
+            $result['ordinary'] = $i > 0 || $page === mb_strtolower($page);     // a dictionary word, not a name
+            return self::pick($result, 'americas', []);
         }
         return null;
+    }
+
+    /**
+     * Chooses among a Wiktionary answer's pronunciations: English first, then the language this book uses most for
+     * its other words ($langRank: language => how many words), then the accent region ('americas' or 'europe').
+     * @param array<string,mixed> $result
+     * @param array<string,int> $langRank
+     * @return array<string,mixed>
+     */
+    public static function pick(array $result, string $region, array $langRank): array
+    {
+        $options = $result['options'] ?? [];
+        if (!is_array($options) || $options === []) return $result;
+        $base = ['es' => 6, 'fr' => 5, 'it' => 4, 'pt' => 3, 'de' => 2, 'nl' => 1];
+        $best = null;
+        $bestScore = null;
+        foreach ($options as $n => $o) {
+            $score = [$o['lang'] === 'en' ? 1 : 0, $langRank[$o['lang']] ?? 0, $base[$o['lang']] ?? 0, self::regionScore((string) $o['qual'], $region), -$n];
+            if ($bestScore === null || $score > $bestScore) { $best = $o; $bestScore = $score; }
+        }
+        $own = !str_starts_with((string) $result['note'], 'Found as the ordinary word');
+        $result['ipa'] = $best['ipa'];
+        $result['lang'] = $best['lang'];
+        $result['confidence'] = $best['lang'] === 'en' && $own ? 'high' : 'medium';
+        $result['accent'] = (string) $best['qual'];
+        return $result;
+    }
+
+    /**
+     * How well an accent label suits the region: 3 the region's general accent ("US", "Latin America", "UK", "Spain"),
+     * 2 no label, 1 anything else (the other region, or a local accent such as "Buenos Aires").
+     */
+    public static function regionScore(string $qual, string $region): int
+    {
+        if (trim($qual) === '') return 2;
+        $broad = $region === 'europe'
+            ? '/\b(UK|RP|Received Pronunciation|British|Spain|Castilian|Peninsular|France|Parisian|Portugal|European)\b/i'
+            : '/\b(US|General American|GenAm|American|Canada|Canadian|Quebec|Latin America|Americas|Brazil)\b/i';
+        return preg_match($broad, $qual) === 1 ? 3 : 1;
     }
 
     /** @return array<string,string>|null */
@@ -69,8 +116,10 @@ final class PronLookup
         [$ipa, $lang] = self::ipaFromWikipedia($text);
         if ($ipa === '') return null;
         $same = self::same($title, $word);
-        return self::found($ipa, $lang, $lang === 'en' && $same ? 'high' : 'medium', 'Wikipedia: ' . $title, self::wikiUrl($title),
-            $same ? '' : 'Wikipedia sends "' . $word . '" to "' . $title . '"; check it is the same thing.');
+        $variant = $same || self::spellingVariant($title, $word);
+        return self::found($ipa, $lang, $lang === 'en' && $same ? 'high' : ($variant ? 'medium' : 'low'), 'Wikipedia: ' . $title, self::wikiUrl($title),
+            $same ? '' : ($variant ? 'Wikipedia sends "' . $word . '" to "' . $title . '", another spelling; the sounds are for that spelling.'
+                : 'Wikipedia sends "' . $word . '" to "' . $title . '", a different name; these are the sounds of "' . $title . '".'));
     }
 
     /** @return array<string,string>|null */
@@ -95,27 +144,47 @@ final class PronLookup
 
     // ----- parsing (public for tests) -----
 
-    /** The first English pronunciation on a Wiktionary page, else the first in any language. @return array{0:string,1:string} */
-    public static function ipaFromWiktionary(string $text): array
+    /** Language names Wiktionary heads its sections with, and the codes kept for them. */
+    public const LANGUAGES = ['English' => 'en', 'Spanish' => 'es', 'French' => 'fr', 'Italian' => 'it', 'Portuguese' => 'pt', 'German' => 'de', 'Dutch' => 'nl',
+        'Latin' => 'la', 'Catalan' => 'ca', 'Galician' => 'gl', 'Indonesian' => 'id', 'Malay' => 'ms', 'Tagalog' => 'tl', 'Polish' => 'pl', 'Czech' => 'cs',
+        'Swedish' => 'sv', 'Danish' => 'da', 'Norwegian' => 'no', 'Irish' => 'ga', 'Welsh' => 'cy', 'Scottish Gaelic' => 'gd', 'Japanese' => 'ja', 'Chinese' => 'zh',
+        'Russian' => 'ru', 'Greek' => 'el', 'Turkish' => 'tr', 'Arabic' => 'ar', 'Hawaiian' => 'haw', 'Maori' => 'mi'];
+
+    /** A language code as a name for the page ("es" => "Spanish"). */
+    public static function languageName(string $lang): string
     {
-        $first = ['', ''];
-        if (preg_match_all('/\{\{IPA\|([^{}]*)\}\}/u', $text, $all)) {
-            foreach ($all[1] as $inner) {
-                $params = explode('|', $inner);
-                $lang = '';
-                $ipa = '';
-                foreach ($params as $p) {
-                    if (preg_match('/^lang=(.+)$/', $p, $m)) $lang = $m[1];
-                    elseif ($lang === '' && preg_match('/^[a-z]{2,3}(-[A-Za-z0-9]+)?$/', $p)) $lang = $p;
-                    elseif ($ipa === '' && preg_match('#^[/\[].+[/\]]$#u', trim($p))) $ipa = trim($p);
-                }
-                if ($ipa === '') continue;
-                $lang = strtolower(explode('-', $lang)[0]);
-                if ($lang === 'en') return [$ipa, 'en'];
-                if ($first[0] === '') $first = [$ipa, $lang];
+        $name = array_search($lang, self::LANGUAGES, true);
+        return is_string($name) ? $name : ucfirst($lang);
+    }
+
+    /**
+     * The pronunciations on a rendered Wiktionary page, one per line, with the language and the line's accent labels,
+     * in page order.
+     * @return list<array{ipa:string,lang:string,qual:string}>
+     */
+    public static function ipaFromWiktionaryHtml(string $html): array
+    {
+        $out = [];
+        $parts = preg_split('/<h2\b[^>]*\bid="([^"]+)"/u', $html, -1, PREG_SPLIT_DELIM_CAPTURE) ?: [];
+        for ($i = 1; $i + 1 < count($parts); $i += 2) {
+            $name = str_replace('_', ' ', html_entity_decode($parts[$i], ENT_QUOTES | ENT_HTML5, 'UTF-8'));
+            $lang = self::LANGUAGES[$name] ?? mb_strtolower($name);
+            if (!preg_match_all('#<li\b[^>]*>(.*?)</li>#su', $parts[$i + 1], $items)) continue;
+            foreach ($items[1] as $item) {
+                if (!preg_match('#<span class="IPA[^"]*"[^>]*>([^<]+)</span>#u', $item, $m)) continue;
+                $ipa = trim(html_entity_decode($m[1], ENT_QUOTES | ENT_HTML5, 'UTF-8'));
+                $plain = trim((string) preg_replace('/\s+/u', ' ', html_entity_decode(strip_tags($item), ENT_QUOTES | ENT_HTML5, 'UTF-8')));
+                if (!str_contains($plain, 'IPA') || !preg_match('#^[/\[].*[/\]]$#u', $ipa) || str_starts_with(trim($ipa, '/['), '-')) continue;
+                // accent labels: whatever else the line says, without the IPA itself
+                preg_match_all('#<span class="IPA[^"]*"[^>]*>([^<]+)</span>#u', $item, $spans);
+                $rest = str_replace(array_map(static fn (string $s): string => html_entity_decode($s, ENT_QUOTES | ENT_HTML5, 'UTF-8'), $spans[1]), '', $plain);
+                $rest = preg_replace('/IPA\s*\(key\)\s*:?/u', '', $rest) ?? $rest;
+                $qual = trim((string) preg_replace('/[()]+|\s+/u', ' ', $rest), " ,;:\u{00a0}");
+                $qual = (string) preg_replace('/\s{2,}/u', ' ', $qual);
+                $out[] = ['ipa' => $ipa, 'lang' => $lang, 'qual' => $qual];
             }
         }
-        return $first;
+        return $out;
     }
 
     /** The subject's pronunciation from the start of a Wikipedia article. @return array{0:string,1:string} */
@@ -149,11 +218,11 @@ final class PronLookup
         return $text === '' ? null : [(string) $page['title'], $text];
     }
 
-    private function wikitext(string $api, string $page): ?string
+    private function renderedPage(string $api, string $page): ?string
     {
-        $json = $this->get($api . '?' . http_build_query(['action' => 'parse', 'prop' => 'wikitext', 'page' => $page, 'redirects' => 1, 'format' => 'json']));
+        $json = $this->get($api . '?' . http_build_query(['action' => 'parse', 'prop' => 'text', 'page' => $page, 'redirects' => 1, 'disableeditsection' => 1, 'disablelimitreport' => 1, 'format' => 'json', 'formatversion' => 2]));
         if ($json === null) return null;
-        $text = json_decode($json, true)['parse']['wikitext']['*'] ?? null;
+        $text = json_decode($json, true)['parse']['text'] ?? null;
         return is_string($text) ? $text : null;
     }
 
@@ -206,6 +275,20 @@ final class PronLookup
             return mb_strtolower(strtr($s, ['á' => 'a', 'é' => 'e', 'í' => 'i', 'ó' => 'o', 'ú' => 'u', 'ñ' => 'n', 'ü' => 'u', 'à' => 'a', 'è' => 'e', 'ç' => 'c', 'Á' => 'A', 'É' => 'E', 'Í' => 'I', 'Ó' => 'O', 'Ú' => 'U', 'Ñ' => 'N']));
         };
         return $fold($a) === $fold($b);
+    }
+
+    /** Close enough to be the same name spelled another way: at most a third of the letters differ. */
+    public static function spellingVariant(string $a, string $b): bool
+    {
+        $fold = static function (string $s): string {
+            $s = strtr(mb_strtolower($s), ['á' => 'a', 'à' => 'a', 'â' => 'a', 'ä' => 'a', 'é' => 'e', 'è' => 'e', 'ê' => 'e', 'ë' => 'e', 'í' => 'i', 'î' => 'i', 'ï' => 'i',
+                'ó' => 'o', 'ô' => 'o', 'ö' => 'o', 'ú' => 'u', 'û' => 'u', 'ü' => 'u', 'ñ' => 'n', 'ç' => 'c']);
+            return (string) preg_replace('/[^a-z]/', '', $s);
+        };
+        $x = $fold($a);
+        $y = $fold($b);
+        if ($x === '' || $y === '') return false;
+        return levenshtein($x, $y) * 3 <= max(strlen($x), strlen($y));
     }
 
     private static function wikiUrl(string $title): string

@@ -32,8 +32,35 @@ check('the spoken form of a rule carries the exact sounds', IpaConverter::markup
 check('nothing usable gives nothing', IpaConverter::toKokoro('/ʔ/'), '');
 
 // ----- parsing the sources -----
-check('Wiktionary: the English pronunciation first', PronLookup::ipaFromWiktionary("==Spanish==\n{{IPA|es|/oˈla/}}\n==English==\n* {{IPA|en|/ˈhætəɹəs/|/x/}}"), ['/ˈhætəɹəs/', 'en']);
-check('Wiktionary: another language when that is all there is', PronLookup::ipaFromWiktionary('{{IPA|es|[maˈtansas]}}'), ['[maˈtansas]', 'es']);
+// rendered Wiktionary pages: a section per language, a list line per pronunciation with its accent labels
+function wikt(array $sections): string
+{
+    $html = '<div class="mw-heading mw-heading2"><h2 id="mw-toc-heading">Contents</h2></div>';
+    foreach ($sections as $lang => $lines) {
+        $html .= '<div class="mw-heading mw-heading2"><h2 id="' . str_replace(' ', '_', $lang) . '">' . $lang . '</h2></div><ul>';
+        foreach ($lines as [$ipa, $qual]) $html .= '<li>' . ($qual !== '' ? '<span class="ib-brac">(</span><span class="ib-content">' . $qual . '</span><span class="ib-brac">)</span> ' : '')
+            . '<a href="/wiki/Appendix:IPA">IPA</a><sup>(<a>key</a>)</sup>:&#32;<span class="IPA nowrap">' . $ipa . '</span></li>';
+        $html .= '<li>Rhymes: <a><span class="IPA">-asjas</span></a></li></ul>';
+    }
+    return $html;
+}
+$gracias = wikt(['English' => [['/ˈɡɹɑ.θi.əs/', 'UK'], ['/ˈɡɹɑ.si.əs/', 'US']], 'Aragonese' => [['/ˈɡɾaθjas/', '']], 'Spanish' => [['/ˈɡɾaθjas/', 'Spain, Equatorial Guinea'], ['/ˈɡɾasjas/', 'Latin America, Philippines']]]);
+$opts = PronLookup::ipaFromWiktionaryHtml($gracias);
+check('Wiktionary page: every pronunciation with its language and accent; rhymes left out', [count($opts), $opts[0], $opts[4]['lang']],
+    [5, ['ipa' => '/ˈɡɹɑ.θi.əs/', 'lang' => 'en', 'qual' => 'UK'], 'es']);
+$pick = static fn (string $html, string $region, array $rank = []): array => PronLookup::pick(['note' => '', 'options' => PronLookup::ipaFromWiktionaryHtml($html), 'ipa' => '', 'lang' => '', 'confidence' => ''], $region, $rank);
+check('English first, in the book\'s accent', [$pick($gracias, 'americas')['ipa'], $pick($gracias, 'europe')['ipa']], ['/ˈɡɹɑ.si.əs/', '/ˈɡɹɑ.θi.əs/']);
+$capitan = wikt(['Spanish' => [['/kapiˈtan/', '']], 'Aragonese' => [['/kapiˈtan/', '']]]);
+$vaya = wikt(['Zazaki' => [['[vɑːˈɑ]', '']], 'Spanish' => [['/ˈbaʝa/', ''], ['/ˈbaʃa/', 'Buenos Aires and environs'], ['/ˈbaʒa/', 'elsewhere in Pampas and southern Argentina']]]);
+$gracSpanish = wikt(['Spanish' => [['/ˈɡɾaθjas/', 'Spain'], ['/ˈɡɾasjas/', 'Latin America, Philippines']]]);
+check('no English: the language the book uses most, else Spanish/French before rarer ones', [$pick($vaya, 'americas')['lang'], $pick($capitan, 'americas', ['aragonese' => 9, 'es' => 3])['lang']], ['es', 'aragonese']);
+check('a local accent (Buenos Aires) is not taken for the region\'s general one', [$pick($vaya, 'americas')['ipa'], $pick($gracSpanish, 'americas')['ipa'], $pick($gracSpanish, 'europe')['ipa']],
+    ['/ˈbaʝa/', '/ˈɡɾasjas/', '/ˈɡɾaθjas/']);
+check('a renamed page is medium when it is another spelling, low when it is another name', [PronLookup::spellingVariant('Havana', 'Habana'), PronLookup::spellingVariant('Palau', 'Pelews')], [true, false]);
+check('vowels side by side are separate syllables; a non-syllabic vowel is a glide', [IpaConverter::respell(IpaConverter::toKokoro('/ˈɡɹɑ.si.əs/')), IpaConverter::respell(IpaConverter::toKokoro('/ˈfu̯eɣo/'))], ['GRAH-see-uhs', 'FWAY-goh']);
+$dict = ['god' => true, 'fearing' => true, 'twenty' => true, 'nine' => true, 'how' => true, 'dutch' => true, 'lay' => true];
+check('plain English compounds and contractions are not looked up', array_map(static fn (string $w): bool => PronCheckService::plainEnglish($w, $dict), ['God-fearing', 'Twenty-nine', "How'd", "Dutch'll", "Wha'd", 'Oost-Indische', 'Hatteras']),
+    [true, true, true, true, false, false, false]);
 check('Wikipedia: IPAc-en, then a foreign IPA', [PronLookup::ipaFromWikipedia("'''Havana''' ({{IPAc-en|h|ə|ˈ|v|æ|n|ə}}; Spanish: {{IPA|es|aˈβana|lang}})"), PronLookup::ipaFromWikipedia('({{IPA|es-419|maˈtansas|lang}})')],
     [['həˈvænə', 'en'], ['maˈtansas', 'es']]);
 check('disambiguation pages are skipped', [PronLookup::isDisambiguation("'''Quark''' may refer to:"), PronLookup::isDisambiguation('{{disambiguation}}'), PronLookup::isDisambiguation('A city.')], [true, true, false]);
@@ -41,7 +68,10 @@ check('disambiguation pages are skipped', [PronLookup::isDisambiguation("'''Quar
 // ----- looking words up (fake Wikimedia) -----
 $requests = [];
 $pages = [
-    'wiktionary|Hatteras' => ['parse' => ['wikitext' => ['*' => "==English==\n{{IPA|en|/ˈhætəɹəs/}}"]]],
+    'wiktionary|Hatteras' => ['parse' => ['text' => wikt(['English' => [['/ˈhætəɹəs/', '']]])]],
+    'wiktionary|mamá' => ['parse' => ['text' => wikt(['Spanish' => [['/maˈma/', '']], 'Portuguese' => [['/mɐˈma/', '']]])]],
+    'wiktionary|dammit' => ['parse' => ['text' => wikt(['English' => [['/ˈdæmɪt/', '']]])]],
+    'wikipedia|Pelews' => ['query' => ['pages' => ['4' => ['title' => 'Palau', 'revisions' => [['slots' => ['main' => ['*' => "'''Palau''' ({{IPAc-en|p|ə|ˈ|l|aʊ}})"]]]]]]]],
     'wikipedia|Matanzas' => ['query' => ['pages' => ['1' => ['title' => 'Matanzas', 'revisions' => [['slots' => ['main' => ['*' => "'''Matanzas''' ({{IPA|es-419|maˈtansas|lang}}) is a city"]]]]]]]],
     'wikipedia|Habana' => ['query' => ['pages' => ['2' => ['title' => 'Havana', 'revisions' => [['slots' => ['main' => ['*' => "'''Havana''' ({{IPAc-en|h|ə|ˈ|v|æ|n|ə}})"]]]]]]]],
     'search|Odo' => ['query' => ['search' => [['title' => 'Odo (Star Trek)']]]],
@@ -66,12 +96,13 @@ check('a redirect to another spelling is medium, with a note', [$hv['confidence'
 $o = $lookup->find('Odo', 'Star Trek');
 check('found by search with the book\'s title: medium', [$o['status'], $o['confidence'], $o['source_title']], ['found', 'medium', 'Wikipedia: Odo (Star Trek)']);
 check('nothing anywhere', $lookup->find('Sisko', 'Star Trek')['status'], 'none');
+check('Wikipedia sending a name to a different name is low', $lookup->find('Pelews', 'My Book')['confidence'], 'low');
 $before = count($requests);
 $lookup->find('Hatteras', 'My Book');
 check('an answer is looked up once, then remembered', count($requests), $before);
 $threw = '';
 try { $lookup->find('Busyword', 'x'); } catch (RuntimeException $e) { $threw = $e->getMessage(); }
-check('"too many requests" is reported, and not remembered as "none"', [str_contains($threw, 'too many requests'), Database::connection()->query("SELECT COUNT(*) FROM pron_lookup_cache WHERE cache_key LIKE 'v1|busyword%'")->fetchColumn()], [true, 0]);
+check('"too many requests" is reported, and not remembered as "none"', [str_contains($threw, 'too many requests'), Database::connection()->query("SELECT COUNT(*) FROM pron_lookup_cache WHERE cache_key LIKE 'v2|busyword%'")->fetchColumn()], [true, 0]);
 
 // ----- checking a book -----
 $pdo = Database::connection();
@@ -79,14 +110,14 @@ $pdo->exec("INSERT INTO projects(id,slug,title,active_voice_profile_id) VALUES('
 $pdo->exec("INSERT INTO source_assets(id,project_id,original_name,stored_relpath,sha256,byte_size) VALUES('a','p','b.epub','x','h',1)");
 $pdo->exec("INSERT INTO source_sections(id,project_id,source_asset_id,spine_index,manifest_id,href,raw_sha256) VALUES('s1','p','a',1,'c1','c1.xhtml','h')");
 $pdo->prepare('INSERT INTO source_blocks(id,project_id,source_section_id,block_index,block_type,source_text,source_sha256,dom_path) VALUES(?,?,?,?,?,?,?,?)')
-    ->execute(['b1', 'p', 's1', 0, 'p', 'They sailed from Hatteras to Matanzas, where Odo and Sisko waited. Then Matanzas again, and Habana.', 'h', '/']);
+    ->execute(['b1', 'p', 's1', 0, 'p', 'They sailed from Hatteras to Matanzas, where Odo and Sisko waited. Then Matanzas again, and Habana. The boy said Mamá, then Dammit, then Mamá and mamá.', 'h', '/']);
 $pdo->exec("INSERT INTO logical_sections(id,project_id,position,title,included) VALUES('L','p',1,'Chapter 1',1)");
 $pdo->exec("INSERT INTO logical_section_sources(logical_section_id,source_section_id,source_order) VALUES('L','s1',0)");
 $svc = new PronCheckService($lookup);
-$words = array_column($svc->words('p', ['proper']), 'text');
-check('the words to check are the flagged names, most frequent first', [$words[0], in_array('Sisko', $words, true), in_array('They', $words, true)], ['Matanzas', true, false]);
+$words = array_column($svc->words('p', ['proper', 'odd']), 'text');
+check('the words to check are the flagged names, most frequent first', [$words[0], in_array('Sisko', $words, true), in_array('They', $words, true)], ['Mamá', true, false]);   // Mamá twice and mamá once count as one word
 $progress = [];
-$result = $svc->run('p', ['kinds' => ['proper']], function (int $d, int $t) use (&$progress): void { $progress[] = "$d/$t"; });
+$result = $svc->run('p', ['kinds' => ['proper', 'odd']], function (int $d, int $t) use (&$progress): void { $progress[] = "$d/$t"; });
 check('the run reports progress and what it found', [$result['found'] >= 3, end($progress) === count($words) . '/' . count($words)], [true, true]);
 $res = $svc->results('p');
 check('found and not-found lists', [in_array('Sisko', array_column($res['missing'], 'word'), true), array_column($res['found'], 'word')[0]], [true, 'Hatteras']);
@@ -97,6 +128,12 @@ check('making a rule stores the exact sounds and where they came from', [$rule['
 check('a word with a rule leaves the results', in_array('Matanzas', array_column($svc->results('p')['found'], 'word'), true), false);
 check('the rule is read with the sounds', (new PronunciationService())->apply('to Matanzas.', (new PronunciationService())->effective('p', 'am_michael'), false)['text'], 'to [Matanzas](/mɑˈtɑnsɑs/).');
 check('make all high-confidence rules', [$svc->makeRules('p', 'high'), in_array('Hatteras', array_column((new PronunciationService())->rules('project', 'p'), 'pattern'), true)], [1, true]);
+$svc->setRegion('p', 'europe');
+check('the accent region is kept per book', $svc->region('p'), 'europe');
+check('a word in two capitals is checked once', count(array_filter($words, static fn (string $w): bool => mb_strtolower($w) === 'mamá')), 1);
+check('a dictionary word with an English pronunciation goes to the ordinary list', [array_column($res['ordinary'], 'word'), in_array('Dammit', array_column($res['found'], 'word'), true)], [['Dammit'], false]);
+$svc->makeRule('p', 'Mamá');
+check('a dictionary word\'s rule covers every capital', (new PronunciationService())->apply('Mamá and mamá.', (new PronunciationService())->effective('p', 'am_michael'), false)['text'], '[Mamá](/mɑˈmɑ/) and [Mamá](/mɑˈmɑ/).');
 $svc->dismiss('p', 'Sisko');
 check('a dismissed word leaves the list', in_array('Sisko', array_column($svc->results('p')['missing'], 'word'), true), false);
 check('checked words are not checked again unless asked', [count($svc->words('p', ['proper'])), count($svc->words('p', ['proper'], true)) > 0], [0, true]);
