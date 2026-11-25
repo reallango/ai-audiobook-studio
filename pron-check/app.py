@@ -175,6 +175,13 @@ class AssessIn(BaseModel):
     minimum: float = 85
 
 
+class FindIn(BaseModel):
+    word: str
+    sounds: str = ""      # the sounds wanted (Kokoro's set), or
+    say: str = ""         # a respelling of them, capitals on the stressed part: "fuh-RENG-ghee"
+    british: bool = False
+
+
 class MeasureIn(BaseModel):
     voice: str = "am_michael"
     models: list[str] = [DEFAULT_MODEL]
@@ -219,6 +226,21 @@ def route_assess(body: AssessIn):
                     row["spelling"] = alt
         out.append(row)
     return {"items": out}
+
+
+@app.post("/find", dependencies=[Depends(require_key)])
+def route_find(body: FindIn):
+    """Spellings that make the voice say what someone wants: from sounds, or from a respelling of them."""
+    import respell
+    say = lambda s: g2p(s, body.british)
+    target = body.sounds.strip() or (respell.target_from_respelling(body.say[:100], say) if body.say.strip() else "")
+    if not target or not body.word.strip():
+        raise HTTPException(422, "Give the word, and how it should sound.")
+    word = body.word.strip()[:100]
+    reads = say(word)
+    found = respell.best(target, word, say, compare, tries=120, extra=tuple(t for t in {body.say.strip()} if t), alternatives=3) or {}
+    spellings = [{k: found[k] for k in ("text", "reads", "score")}] + found.get("others", []) if found else []
+    return {"target": target, "word_reads": reads, "word_score": compare(target, reads), "spellings": spellings}
 
 
 @app.post("/measure", dependencies=[Depends(require_key)])

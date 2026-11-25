@@ -66,7 +66,30 @@ def word_variants(word: str, target: str) -> list[str]:
     return out
 
 
-def best(target: str, word: str, g2p, score, tries: int = 60) -> dict | None:
+def target_from_respelling(text: str, g2p) -> str:
+    """
+    The sounds someone means by a respelling such as "fuh-RENG-ghee": each part as the voice reads it, with the stress
+    on the part in capitals (the voice itself would stress every hyphenated part). Without capitals, the voice's own
+    reading of what was typed.
+    """
+    import re
+    parts = [p for p in re.split(r"[-\s]+", text.strip()) if p]
+    loud = [p.isupper() and any(c.isalpha() for c in p) for p in parts]
+    if not parts or not any(loud) or all(loud):
+        return g2p(text)
+    out = ""
+    for part, stressed in zip(parts, loud):
+        sounds = "".join(c for c in g2p(part.lower()) if c not in "ˈˌ ")
+        if stressed:
+            at = next((i for i, c in enumerate(sounds) if c in VOWELS), 0)
+            sounds = sounds[:at] + "ˈ" + sounds[at:]
+        else:
+            sounds = sounds.replace("ʌ", "ə")                # an unstressed "uh" is the weak vowel
+        out += sounds
+    return out
+
+
+def best(target: str, word: str, g2p, score, tries: int = 60, extra: tuple = (), alternatives: int = 0) -> dict | None:
     """The spelling whose reading is closest to target. g2p(text) -> phonemes; score(a, b) -> 0..100."""
     sounds = sounds_of(target)
     if not sounds:
@@ -97,9 +120,21 @@ def best(target: str, word: str, g2p, score, tries: int = 60) -> dict | None:
         if winner is None or current > winner[0]:
             winner = (current, text)
     # the book's own spelling, lightly edited, often reads best and looks most like the name
-    for text in word_variants(word, target):
+    for text in [*word_variants(word, target), *extra]:
         value = rate(text)
         if value >= winner[0]:
             winner = (value, text)
     text = winner[1]                                         # a name keeps its capital, as the book writes it
-    return {"text": text, "reads": seen[winner[1]][1], "score": winner[0], "tried": len(seen)}
+    out = {"text": text, "reads": seen[text][1], "score": winner[0], "tried": len(seen)}
+    if alternatives:
+        # the next best that read differently from the winner and each other
+        others, readings = [], {seen[text][1]}
+        for t, (value, reads) in sorted(seen.items(), key=lambda kv: -kv[1][0]):
+            if reads in readings or t == word:
+                continue
+            readings.add(reads)
+            others.append({"text": t, "reads": reads, "score": value})
+            if len(others) >= alternatives:
+                break
+        out["others"] = others
+    return out
