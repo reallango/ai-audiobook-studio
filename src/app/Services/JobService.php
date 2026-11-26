@@ -113,6 +113,12 @@ final class JobService
             $this->release($job, 'DONE', 'Chapter audio is ready.');
         } catch (Throwable $e) {
             error_log('generation job failed: ' . $e->getMessage());
+            if (Database::isBusy($e)) {
+                // something else held the database for a long time: nothing is wrong with the chapter, so try it again
+                try { $this->release($job, 'QUEUED', 'Waiting for the database; trying again.'); } catch (Throwable) {}
+                sleep(5);
+                return true;
+            }
             $this->release($job, 'FAILED', mb_substr($e->getMessage(), 0, 300));
         }
         return true;
