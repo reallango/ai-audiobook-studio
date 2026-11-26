@@ -102,7 +102,7 @@ final class TaskService
                     (SELECT COUNT(*) FROM segments g WHERE g.logical_section_id=j.logical_section_id) AS total,
                     (SELECT COUNT(*) FROM segments g WHERE g.logical_section_id=j.logical_section_id AND g.status='DONE') AS done
              FROM generation_jobs j JOIN logical_sections s ON s.id=j.logical_section_id JOIN projects p ON p.id=j.project_id
-             WHERE $where(j.status IN ('QUEUED','RUNNING') OR j.finished_at > datetime('now','-30 minutes'))
+             WHERE $where(j.status IN ('QUEUED','RUNNING') OR (j.finished_at > datetime('now','-30 minutes') AND j.cleared=0))
              ORDER BY CASE j.status WHEN 'RUNNING' THEN 0 WHEN 'QUEUED' THEN 1 ELSE 2 END, j.requested_at, s.position
              LIMIT 80"
         );
@@ -118,7 +118,7 @@ final class TaskService
 
         $tasks = $db->prepare(
             "SELECT t.*, p.title AS book FROM background_tasks t JOIN projects p ON p.id=t.project_id
-             WHERE " . ($projectId !== null ? 't.project_id=:p AND ' : '') . "(t.status IN ('QUEUED','RUNNING') OR t.finished_at > datetime('now','-30 minutes'))
+             WHERE " . ($projectId !== null ? 't.project_id=:p AND ' : '') . "(t.status IN ('QUEUED','RUNNING') OR (t.finished_at > datetime('now','-30 minutes') AND t.cleared=0))
              ORDER BY t.requested_at DESC LIMIT 10"
         );
         $tasks->execute($args);
@@ -151,6 +151,23 @@ final class TaskService
 
         $active = count(array_filter($items, static fn (array $i): bool => in_array($i['status'], ['QUEUED', 'RUNNING'], true)));
         return ['worker' => JobService::workerOnline(), 'task_worker' => self::workerOnline(), 'active' => $active, 'ahead' => $ahead, 'ahead_books' => $aheadBooks, 'items' => $items];
+    }
+
+    /**
+     * Hides finished work (done, failed or cancelled) from the Activity list, for one book or every book. Running and
+     * waiting work stays, and a chapter that is tried again shows again. Returns how many entries were cleared.
+     */
+    public function clearFinished(?string $projectId = null): int
+    {
+        $where = $projectId !== null ? ' AND project_id=:p' : '';
+        $args = $projectId !== null ? ['p' => $projectId] : [];
+        $n = 0;
+        foreach (['generation_jobs', 'background_tasks'] as $table) {
+            $s = $this->db()->prepare("UPDATE $table SET cleared=1 WHERE cleared=0 AND status NOT IN ('QUEUED','RUNNING')$where");
+            $s->execute($args);
+            $n += $s->rowCount();
+        }
+        return $n;
     }
 
     // ----- internals -----

@@ -86,6 +86,28 @@
       list.append(li);
     }
     pop.append(list);
+    const finished = data.items.filter(i => i.status !== 'QUEUED' && i.status !== 'RUNNING');
+    if (finished.length && root.dataset.clearUrl) {
+      const foot = el('footer', 'act-foot');
+      const clear = el('button', 'act-clear', 'Clear ' + (finished.length === 1 ? 'the finished entry' : 'finished entries (' + finished.length + ')'));
+      clear.type = 'button';
+      clear.title = 'Remove done and failed work from this list. Running and waiting work stays.';
+      clear.addEventListener('click', async () => {
+        clear.disabled = true;
+        try {
+          const res = await fetch(root.dataset.clearUrl, {method: 'POST', credentials: 'same-origin', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({_token: root.dataset.token || '', id: data.scope === 'book' ? (root.dataset.book || '') : ''})});
+          const out = await res.json();
+          if (!out.ok) throw new Error(out.message || 'Could not clear the list.');
+          poll();
+        } catch (error) {
+          clear.disabled = false;
+          clear.textContent = error.message || 'Could not clear the list.';
+        }
+      });
+      foot.append(clear);
+      pop.append(foot);
+    }
   }
 
   function row(i, showBook) {

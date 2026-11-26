@@ -25,7 +25,7 @@ final class App
     public static function run(): void
     {
         $route=trim((string)($_GET['page']??'projects'),'/');
-        try{match($route){'api-health'=>self::json(self::health()),'diagnostics'=>self::view('diagnostics'),'projects','home',''=>self::projects(),'quick-import'=>self::quickImport(),'arrange'=>self::arrange(),'proofread'=>self::proofread(),'pronounce'=>self::pronounce(),'intro-settings'=>self::introSettings(),'pron-check'=>self::pronCheck(),'pron-checker'=>self::pronChecker(),'pron-find'=>self::pronFind(),'arrange-action'=>self::arrangeAction(),'section-text'=>self::sectionText(),'project-create'=>self::createProject(),'project'=>self::project(),'epub-upload'=>self::epubUpload(),'epub-analyze'=>self::epubAnalyze(),'source-sections'=>self::sourceSections(),'source-section'=>self::sourceSection(),'project-archive'=>self::archiveProject(),'project-restore'=>self::restoreProject(),'project-delete'=>self::deleteProject(),'voice-lab'=>self::voiceLab(),'voice-preview'=>self::voicePreview(),'pronunciation'=>self::pronunciation(),'rulesets'=>self::pronunciation(),'pronunciation-rule'=>self::pronunciationRule(),'pronunciation-example'=>self::pronunciationExample(),'rulesets-regex'=>self::regexPreview(),'textchecks'=>self::textChecks(),'activity'=>self::activity(),'section-preview'=>self::sectionPreview(),'chapters'=>self::chapters(),'chapter-review'=>self::chapterReview(),'chapter-audio'=>self::chapterAudio(),'chapter-text'=>self::chapterText(),'audio'=>self::audio(),'export'=>self::export(),default=>self::notFound()};}
+        try{match($route){'api-health'=>self::json(self::health()),'diagnostics'=>self::view('diagnostics'),'projects','home',''=>self::projects(),'quick-import'=>self::quickImport(),'arrange'=>self::arrange(),'proofread'=>self::proofread(),'pronounce'=>self::pronounce(),'intro-settings'=>self::introSettings(),'pron-check'=>self::pronCheck(),'pron-checker'=>self::pronChecker(),'pron-find'=>self::pronFind(),'arrange-action'=>self::arrangeAction(),'section-text'=>self::sectionText(),'project-create'=>self::createProject(),'project'=>self::project(),'epub-upload'=>self::epubUpload(),'epub-analyze'=>self::epubAnalyze(),'source-sections'=>self::sourceSections(),'source-section'=>self::sourceSection(),'project-archive'=>self::archiveProject(),'project-restore'=>self::restoreProject(),'project-delete'=>self::deleteProject(),'voice-lab'=>self::voiceLab(),'voice-preview'=>self::voicePreview(),'pronunciation'=>self::pronunciation(),'rulesets'=>self::pronunciation(),'pronunciation-rule'=>self::pronunciationRule(),'pronunciation-example'=>self::pronunciationExample(),'rulesets-regex'=>self::regexPreview(),'textchecks'=>self::textChecks(),'activity'=>self::activity(),'activity-clear'=>self::activityClear(),'section-preview'=>self::sectionPreview(),'chapters'=>self::chapters(),'chapter-review'=>self::chapterReview(),'chapter-audio'=>self::chapterAudio(),'chapter-text'=>self::chapterText(),'audio'=>self::audio(),'export'=>self::export(),default=>self::notFound()};}
         catch(Throwable $error){error_log($error->__toString());http_response_code(500);self::view('error',['message'=>config('app.debug',false)?$error->getMessage():'The request could not be completed. Check the application log for details.']);}
     }
     private static function voiceLab():void
@@ -331,6 +331,18 @@ final class App
         $id = (string) ($_GET['id'] ?? '');
         if ($id !== '' && !(new ProjectRepository())->find($id)) { self::json(['ok' => false, 'message' => 'Project not found.'], 404); return; }
         self::json(['ok' => true, 'scope' => $id === '' ? 'all' : 'book'] + (new \App\Services\TaskService())->activity($id === '' ? null : $id));
+    }
+
+    /** POST ?page=activity-clear {_token, id?} -> {ok, cleared}: hides finished and failed work from the activity list (one book, or all). */
+    private static function activityClear():void
+    {
+        if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') { header('Allow: POST'); self::json(['ok' => false, 'message' => 'POST is required.'], 405); return; }
+        $p = json_decode((string) file_get_contents('php://input'), true);
+        if (!is_array($p)) { self::json(['ok' => false, 'message' => 'The request was not valid JSON.'], 400); return; }
+        if (!Csrf::validate(isset($p['_token']) ? (string) $p['_token'] : null)) { self::json(['ok' => false, 'message' => 'Security token expired. Reload the page.'], 419); return; }
+        $id = (string) ($p['id'] ?? '');
+        if ($id !== '' && !(new ProjectRepository())->find($id)) { self::json(['ok' => false, 'message' => 'Project not found.'], 404); return; }
+        self::json(['ok' => true, 'cleared' => (new \App\Services\TaskService())->clearFinished($id === '' ? null : $id)]);
     }
 
     /** GET ?page=textchecks&id=PROJECT&kind=proper|number|... : things in the book a voice may read badly, to turn into rules. */

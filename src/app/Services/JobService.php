@@ -36,7 +36,7 @@ final class JobService
 
         $this->db()->prepare(
             "INSERT INTO generation_jobs(id,project_id,logical_section_id,status) VALUES(:id,:p,:l,'QUEUED')
-             ON CONFLICT(logical_section_id) DO UPDATE SET status='QUEUED', message='', requested_at=CURRENT_TIMESTAMP, started_at=NULL, finished_at=NULL, heartbeat_at=NULL"
+             ON CONFLICT(logical_section_id) DO UPDATE SET status='QUEUED', message='', cleared=0, requested_at=CURRENT_TIMESTAMP, started_at=NULL, finished_at=NULL, heartbeat_at=NULL"
         )->execute(['id' => self::uuid(), 'p' => $projectId, 'l' => $logicalId]);
         return $this->forChapter($logicalId) ?? throw new \RuntimeException('The job could not be queued.');
     }

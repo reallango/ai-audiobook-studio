@@ -49,6 +49,13 @@ check('a build with nothing ready fails with the reason', [$row['status'], $row[
 check('and is no longer busy', $tasks->isBusy('p'), false);
 check('the failure stays visible for a while', $tasks->activity('p')['items'][0]['status'], 'FAILED');
 check('nothing left to run', $tasks->runNext(), false);
+$pdo->exec("INSERT INTO logical_sections(id,project_id,position,title,included) SELECT 'L2','p',9,'Chapter 9',1 WHERE NOT EXISTS (SELECT 1 FROM logical_sections WHERE id='L2')");
+$pdo->exec("INSERT INTO generation_jobs(id,project_id,logical_section_id,status,requested_at) VALUES('jw','p','L2','QUEUED',datetime('now'))");
+check('clearing hides the finished and failed work', $tasks->clearFinished('p'), 2);
+check('and keeps what is still waiting', array_map(static fn (array $i): string => $i['status'], $tasks->activity('p')['items']), ['QUEUED']);
+check('clearing again finds nothing', $tasks->clearFinished('p'), 0);
+$pdo->exec("UPDATE generation_jobs SET status='DONE', finished_at=datetime('now'), cleared=0 WHERE id='j'");
+$pdo->exec("DELETE FROM generation_jobs WHERE id='jw'");
 
 $pdo->exec("INSERT INTO background_tasks(id,project_id,kind,status,heartbeat_at) VALUES('r','p','m4b','RUNNING',datetime('now'))");
 check('a running build counts as the build worker being there', $tasks->activity('p')['task_worker'], true);
