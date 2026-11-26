@@ -141,6 +141,7 @@ final class JobService
         $s = $db->prepare("SELECT * FROM generation_jobs WHERE status='QUEUED' OR (status='RUNNING' AND heartbeat_at < datetime('now', :stale)) ORDER BY requested_at LIMIT 1");
         $s->execute(['stale' => '-' . self::STALE_SECONDS . ' seconds']);
         $job = $s->fetch();
+        $s->closeCursor();                  // an open SELECT would keep an old snapshot and could make the UPDATE fail
         if (!$job) return null;
         $c = $db->prepare("UPDATE generation_jobs SET status='RUNNING', started_at=COALESCE(started_at, CURRENT_TIMESTAMP), heartbeat_at=CURRENT_TIMESTAMP, message='' WHERE id=:id AND status=:old");
         $c->execute(['id' => $job['id'], 'old' => $job['status']]);

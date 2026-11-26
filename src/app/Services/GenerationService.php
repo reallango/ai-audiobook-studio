@@ -100,6 +100,9 @@ final class GenerationService
         );
         $pick->execute(['l' => $logicalId, 'max' => self::MAX_ATTEMPTS, 'stale' => self::STALE_CLAIM]);
         $row = $pick->fetch();
+        // An unfinished SELECT keeps its read snapshot open. Making the audio takes seconds while other processes write,
+        // and the UPDATE below would then be refused at once ("database is locked"), so the query is closed now.
+        $pick->closeCursor();
         if (!$row) {
             $counts = $this->counts($logicalId);
             // another request is still making a segment: not finished yet, so the caller waits instead of assembling
