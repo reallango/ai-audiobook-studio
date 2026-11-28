@@ -56,6 +56,9 @@ $arr = $render(['page' => 'arrange', 'id' => 'p']);
 check('Arrange renders a row per section with switches', [$ok($arr), substr_count($arr, 'data-row='), substr_count($arr, 'role="switch"')], [true, 3, 3]);
 $pr = $render(['page' => 'proofread', 'id' => 'p']);
 check('Proofread opens the first chapter still to approve, with marks and tools', [$ok($pr), str_contains($pr, 'Chapter 2'), str_contains($pr, 'mark class="chg rule"'), str_contains($pr, 'data-workbench'), str_contains($pr, 'data-audio-panel')], [true, true, true, true, true]);
+// workbench.js finds the chapter text by [data-book]: a second element with that attribute (the Activity bar once had
+// one) takes its place, and clicking words, Listen and editing all stop working
+check('only the chapter text carries data-book', preg_match_all('/\sdata-book[\s>=]/', $pr), 1);
 $pr1 = $render(['page' => 'proofread', 'id' => 'p', 'section' => $first]);
 check('an approved chapter offers to remove the approval', [$ok($pr1), str_contains($pr1, 'Remove approval')], [true, true]);
 foreach (['rules', 'suggestions', 'shared'] as $tab) {

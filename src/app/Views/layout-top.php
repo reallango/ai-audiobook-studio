@@ -94,7 +94,7 @@ $bookNav = $book === null ? [] : [
   <div class="activity" id="activity" data-url="<?= e(base_url('activity', $book !== null ? ['id' => $book['id']] : [])) ?>"
        data-reload="<?= e(in_array($route, ['proofread', 'export'], true) ? 'yes' : '') ?>"
        data-chapter-url="<?= e(base_url('proofread') . '&id=') ?>"
-       data-clear-url="<?= e(base_url('activity-clear')) ?>" data-book="<?= e($book !== null ? (string) $book['id'] : '') ?>" data-token="<?= e(\App\Core\Csrf::token()) ?>"></div>
+       data-clear-url="<?= e(base_url('activity-clear')) ?>" data-activity-project="<?= e($book !== null ? (string) $book['id'] : '') ?>" data-token="<?= e(\App\Core\Csrf::token()) ?>"></div>
 </header>
 <?php if ($flash): ?><div class="flash <?= e($flash['type']) ?>" role="status"><?= e($flash['message']) ?></div><?php endif; ?>
 <main id="main" class="<?= $layout === 'bare' ? 'app-main' : 'container' ?>">

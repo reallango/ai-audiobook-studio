@@ -96,7 +96,7 @@
         clear.disabled = true;
         try {
           const res = await fetch(root.dataset.clearUrl, {method: 'POST', credentials: 'same-origin', headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({_token: root.dataset.token || '', id: data.scope === 'book' ? (root.dataset.book || '') : ''})});
+            body: JSON.stringify({_token: root.dataset.token || '', id: data.scope === 'book' ? (root.dataset.activityProject || '') : ''})});
           const out = await res.json();
           if (!out.ok) throw new Error(out.message || 'Could not clear the list.');
           poll();

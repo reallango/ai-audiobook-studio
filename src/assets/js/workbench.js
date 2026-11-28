@@ -1,6 +1,6 @@
 (() => {
   'use strict';
-  const book = document.querySelector('[data-book]');
+  const book = document.querySelector('article[data-book]');   // the chapter text (not any other element that happens to carry data-book)
   const wb = document.querySelector('[data-workbench]');
   if (!book && !wb) return;
   const field = name => (wb ? wb.querySelector(name) : null);
